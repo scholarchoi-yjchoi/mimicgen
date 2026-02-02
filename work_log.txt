@@ -1,0 +1,201 @@
+# Isaac Lab MimicGen Data Generation 문제 해결 작업 로그
+
+## 작업 일시
+2026-02-03 (이전 세션에서 시작, 본 세션에서 완료)
+
+## 문제 상황
+- Isaac Lab MimicGen Blueprint 노트북의 "Data Generation" 셀이 블로킹됨
+- "[Trial 1/5] 시작..." 메시지 이후 무한 대기 상태
+- Jupyter 노트북과 Isaac Sim의 asyncio 이벤트 루프 충돌이 원인
+
+## 이전 시도 (v6~v8)
+- v6: `loop.run_until_complete()` → 블로킹
+- v7: `ThreadPoolExecutor` 사용 → 블로킹
+- v8: `simulation_app.update()` 폴링 + 스레드 → 블로킹
+
+## 본 세션 작업 내용
+
+### 1. 근본 원인 분석
+- Jupyter와 Isaac Sim(Kit)이 각각 자체 asyncio 이벤트 루프를 사용
+- `asyncio.get_event_loop()`가 Kit의 루프가 아닌 새 루프를 생성
+- Kit의 async_engine에서 `assert events._get_running_loop() is self` 검증 실패
+
+### 2. Standalone 스크립트 접근 (v9 계획)
+- Jupyter 대신 독립 Python 스크립트로 데이터 생성 실행 결정
+- 새 파일 생성: `notebook/generate_data_standalone.py`
+
+### 3. 시도한 버전들
+
+#### v1 (초기): 기본 asyncio 루프
+- `asyncio.new_event_loop()` + `run_until_complete()` 사용
+- 결과: `__aenter__` 오류 (asyncio_lock=None 문제)
+
+#### v2: 더미 락 클래스 추가
+- `DummyAsyncLock` 클래스 생성하여 `async with` 지원
+- 결과: Kit async_engine의 AssertionError 지속
+
+#### v3: 공식 Isaac Lab API 사용
+- `setup_async_generation()`, `env_loop()` 함수 사용
+- 결과: 여전히 AssertionError (새 루프와 Kit 루프 충돌)
+
+#### v4: Kit 이벤트 루프 직접 사용 시도
+- `omni.kit.async_engine.async_engine._loop` 접근 시도
+- 결과: AttributeError (API가 다름)
+
+#### v5 (성공): nest_asyncio + 공식 API
+- `nest_asyncio.apply()` 추가 (노트북과 동일한 환경)
+- 공식 API (`setup_async_generation()`, `env_loop()`) 사용
+- Python `-u` 플래그로 unbuffered 출력
+- 결과: **성공!**
+
+### 4. 최종 해결책
+
+#### 핵심 코드 (generate_data_standalone.py)
+```python
+# nest_asyncio 적용 (노트북과 동일하게)
+import nest_asyncio
+nest_asyncio.apply()
+
+# ... AppLauncher 초기화 ...
+
+# 공식 API 사용
+from isaaclab_mimic.datagen.generation import setup_env_config, env_loop, setup_async_generation
+
+async_gen = setup_async_generation(
+    env=env,
+    num_envs=args_cli.num_envs,
+    input_file=args_cli.input_file,
+    success_term=success_term,
+    pause_subtask=args_cli.pause_subtask
+)
+
+env_loop(
+    env=env,
+    env_action_queue=async_gen['action_queue'],
+    shared_datagen_info_pool=async_gen['info_pool'],
+    asyncio_event_loop=async_gen['event_loop']
+)
+```
+
+#### 실행 명령
+```bash
+docker exec synthetic-manipulation-motion-generation-isaac-lab-1 \
+    /workspace/isaaclab/_isaac_sim/python.sh -u \
+    /workspace/isaaclab/generate_data_standalone.py
+```
+
+### 5. 수정된 파일 목록
+
+| 파일 | 작업 |
+|------|------|
+| `notebook/generate_data_standalone.py` | 새로 생성 (v5 - nest_asyncio + 공식 API) |
+| `docker-compose.yml` | standalone 스크립트 마운트 추가 |
+| `launch.sh` | MODE 환경변수 및 -u 플래그 지원 추가 |
+
+### 6. 실행 결과
+```
+[Standalone] Data Generation 시작 (v5 - nest_asyncio)
+[1/5] AppLauncher 시작 중...
+      -> AppLauncher 완료
+[2/5] 모듈 임포트 중...
+      -> 모듈 임포트 완료
+[3/5] 환경 설정 중...
+      -> 환경 설정 완료
+[4/5] 비동기 생성 설정 중...
+Loaded 10 to datagen info pool
+      -> 비동기 생성 설정 완료
+[5/5] 데이터 생성 시작!
+목표: 1개 성공
+
+**************************************************
+have 1 successes out of 1 trials so far
+have 0 failures out of 1 trials so far
+**************************************************
+Reached 1 successes/attempts. Exiting.
+
+[완료]
+      총 시도: 1회
+      성공: 1, 실패: 0
+```
+
+### 7. 생성된 데이터
+
+#### HDF5 파일
+- `datasets/generated_dataset.hdf5` (186KB)
+  - demo_0: actions, initial_state, obs, states
+
+#### 렌더링 이미지
+- `output/` 폴더에 912개 PNG 이미지
+  - normals: 456개
+  - segmentation: 456개
+
+## 핵심 교훈
+
+1. **nest_asyncio의 중요성**: Isaac Sim(Kit)과 함께 asyncio를 사용할 때 `nest_asyncio.apply()`가 필수
+2. **공식 API 사용**: 커스텀 async 구현보다 Isaac Lab의 `setup_async_generation()`, `env_loop()` 사용 권장
+3. **unbuffered 출력**: Isaac Sim 환경에서 print 출력을 보려면 Python `-u` 플래그 필요
+4. **Docker 볼륨 마운트**: 파일 수정 후 컨테이너 재시작으로 변경사항 반영 필요
+
+## 향후 작업
+- Jupyter 노트북의 Data Generation 셀도 동일한 방식(nest_asyncio + 공식 API)으로 수정 가능
+- 생성된 데이터를 Cosmos로 비주얼 증강 진행 가능
+
+---
+
+## 세션 2: Git 저장소 설정
+
+### 작업 일시
+2026-02-03
+
+### 목적
+- 원본 NVIDIA 저장소를 건드리지 않고 개인 저장소에서 개발 이력 관리
+- 이번 세션 작업 내용 버전 관리
+
+### 작업 내용
+
+#### 1. Git Remote 재구성
+- 기존 `origin` (NVIDIA 원본)을 `upstream`으로 변경
+- 개인 저장소를 새 `origin`으로 설정
+
+```bash
+git remote rename origin upstream
+git remote add origin git@github.com:scholarchoi-yjchoi/mimicgen.git
+```
+
+#### 2. SSH 키 설정
+- SSH 키 생성 (`ssh-keygen -t ed25519`)
+- GitHub에 공개키 등록
+- SSH URL로 remote 설정
+
+#### 3. 최종 Remote 구성
+
+| Remote | URL | 용도 |
+|--------|-----|------|
+| `origin` | `git@github.com:scholarchoi-yjchoi/mimicgen.git` | 개인 저장소 (push용) |
+| `upstream` | `https://github.com/NVIDIA-Omniverse-blueprints/synthetic-manipulation-motion-generation.git` | 원본 저장소 (참조용) |
+
+#### 4. 커밋된 변경사항
+
+**수정된 파일:**
+- `docker-compose.yml` - standalone 스크립트 마운트 추가
+- `launch.sh` - MODE 환경변수 및 -u 플래그 지원
+- `notebook/generate_dataset.ipynb`
+
+**새로 추가된 파일:**
+- `CLAUDE.md` - Claude Code 프로젝트 컨텍스트
+- `notebook/generate_data_standalone.py` - Standalone 데이터 생성 스크립트
+- `work_log.txt` - 작업 로그
+
+### 사용법
+
+```bash
+# 개인 저장소로 push
+git push origin main
+
+# 원본 저장소에서 업데이트 가져오기 (필요시)
+git fetch upstream
+git merge upstream/main
+```
+
+---
+작성: Claude Code

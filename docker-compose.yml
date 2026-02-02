@@ -31,7 +31,9 @@ services:
       - ./notebook/notebook_utils.py:/workspace/isaaclab/notebook_utils.py
       - ./notebook/notebook_widgets.py:/workspace/isaaclab/notebook_widgets.py
       - ./notebook/stacking_prompt.toml:/workspace/isaaclab/stacking_prompt.toml
+      - ./notebook/generate_data_standalone.py:/workspace/isaaclab/generate_data_standalone.py
       - ./samples/annotated_dataset.hdf5:/workspace/isaaclab/datasets/annotated_dataset.hdf5
+      - ./pip_overrides:/workspace/isaaclab/pip_overrides
     user: root
     working_dir: /workspace/isaaclab
     entrypoint: ["/workspace/isaaclab/launch.sh"]
