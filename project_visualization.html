@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isaac Lab MimicGen - Synthetic Manipulation Motion Generation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            padding: 15px 0;
+        }
+
+        nav ul {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            list-style: none;
+        }
+
+        nav a {
+            color: #76ff03;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+            text-shadow: 0 0 10px #76ff03;
+        }
+
+        /* Hero Section */
+        .hero {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #robot-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            padding: 40px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(118, 255, 3, 0.3);
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #76ff03, #00e676, #76ff03);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradient 3s linear infinite;
+        }
+
+        @keyframes gradient {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            color: #b0bec5;
+            max-width: 600px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            background: linear-gradient(90deg, #76ff03, #00e676);
+            color: #000;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 20px 5px 0;
+            font-size: 0.9rem;
+        }
+
+        /* Sections */
+        section {
+            padding: 100px 50px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            margin-bottom: 50px;
+            text-align: center;
+            color: #76ff03;
+        }
+
+        /* Pipeline Section */
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .pipeline-step {
+            flex: 1;
+            min-width: 200px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+            transition: all 0.3s;
+            border: 1px solid rgba(118, 255, 3, 0.2);
+        }
+
+        .pipeline-step:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(118, 255, 3, 0.2);
+            border-color: #76ff03;
+        }
+
+        .pipeline-step .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .pipeline-step h3 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: #76ff03;
+        }
+
+        .pipeline-step p {
+            color: #b0bec5;
+            font-size: 0.95rem;
+        }
+
+        .pipeline-arrow {
+            font-size: 2rem;
+            color: #76ff03;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: translateX(0); }
+            50% { opacity: 0.5; transform: translateX(10px); }
+        }
+
+        /* Problem Section */
+        #problem {
+            background: rgba(255, 0, 0, 0.05);
+            border-radius: 30px;
+            margin: 50px;
+        }
+
+        .problem-viz {
+            display: flex;
+            justify-content: center;
+            gap: 50px;
+            flex-wrap: wrap;
+        }
+
+        .event-loop-box {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            animation: rotate-border 4s linear infinite;
+        }
+
+        .event-loop-box.jupyter {
+            border: 4px solid #ff9800;
+            box-shadow: 0 0 30px rgba(255, 152, 0, 0.3);
+        }
+
+        .event-loop-box.isaac {
+            border: 4px solid #2196f3;
+            box-shadow: 0 0 30px rgba(33, 150, 243, 0.3);
+        }
+
+        @keyframes rotate-border {
+            0% { box-shadow: 0 0 30px currentColor; }
+            50% { box-shadow: 0 0 60px currentColor; }
+            100% { box-shadow: 0 0 30px currentColor; }
+        }
+
+        .event-loop-box h4 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .conflict-icon {
+            font-size: 5rem;
+            color: #f44336;
+            animation: shake 0.5s infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        /* Solution Section */
+        .solution-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .solution-card {
+            background: linear-gradient(135deg, rgba(118, 255, 3, 0.1), rgba(0, 230, 118, 0.05));
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(118, 255, 3, 0.3);
+            transition: all 0.3s;
+        }
+
+        .solution-card:hover {
+            transform: scale(1.02);
+            border-color: #76ff03;
+        }
+
+        .solution-card h3 {
+            color: #76ff03;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .solution-card code {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            display: block;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            color: #76ff03;
+            overflow-x: auto;
+        }
+
+        /* Timeline Section */
+        .timeline {
+            position: relative;
+            padding: 20px 0;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(to bottom, #76ff03, #00e676);
+            transform: translateX(-50%);
+        }
+
+        .timeline-item {
+            display: flex;
+            justify-content: flex-end;
+            padding: 20px 40px;
+            position: relative;
+            width: 50%;
+        }
+
+        .timeline-item:nth-child(odd) {
+            align-self: flex-end;
+            justify-content: flex-start;
+            margin-left: 50%;
+        }
+
+        .timeline-item:nth-child(even) {
+            margin-right: 50%;
+        }
+
+        .timeline-content {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 25px;
+            border-radius: 15px;
+            max-width: 400px;
+            border: 1px solid rgba(118, 255, 3, 0.2);
+            position: relative;
+        }
+
+        .timeline-content::before {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #76ff03;
+            border-radius: 50%;
+            top: 30px;
+        }
+
+        .timeline-item:nth-child(odd) .timeline-content::before {
+            left: -50px;
+        }
+
+        .timeline-item:nth-child(even) .timeline-content::before {
+            right: -50px;
+        }
+
+        .timeline-content h3 {
+            color: #76ff03;
+            margin-bottom: 10px;
+        }
+
+        .timeline-content .version {
+            display: inline-block;
+            padding: 3px 10px;
+            background: rgba(118, 255, 3, 0.2);
+            border-radius: 10px;
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+        }
+
+        .timeline-content .status {
+            margin-top: 10px;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+
+        .status.fail {
+            background: rgba(244, 67, 54, 0.3);
+            color: #ff5252;
+        }
+
+        .status.success {
+            background: rgba(118, 255, 3, 0.3);
+            color: #76ff03;
+        }
+
+        /* Architecture Section */
+        .architecture {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .arch-layer {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .arch-box {
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 150px;
+            transition: all 0.3s;
+        }
+
+        .arch-box:hover {
+            transform: scale(1.1);
+        }
+
+        .arch-box.docker {
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+        }
+
+        .arch-box.isaac {
+            background: linear-gradient(135deg, #76ff03, #00e676);
+            color: #000;
+        }
+
+        .arch-box.python {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: #000;
+        }
+
+        .arch-box.data {
+            background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+        }
+
+        .arch-connector {
+            font-size: 2rem;
+            color: #76ff03;
+        }
+
+        /* Results Section */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+        }
+
+        .result-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            border: 1px solid rgba(118, 255, 3, 0.2);
+        }
+
+        .result-card .number {
+            font-size: 4rem;
+            font-weight: bold;
+            color: #76ff03;
+            text-shadow: 0 0 30px rgba(118, 255, 3, 0.5);
+        }
+
+        .result-card .label {
+            font-size: 1.1rem;
+            color: #b0bec5;
+            margin-top: 10px;
+        }
+
+        /* 3D Robot Animation Canvas */
+        #robot-scene {
+            width: 100%;
+            height: 400px;
+            margin: 50px 0;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(118, 255, 3, 0.3);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 50px;
+            background: rgba(0, 0, 0, 0.5);
+            margin-top: 50px;
+        }
+
+        footer a {
+            color: #76ff03;
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .timeline::before {
+                left: 20px;
+            }
+
+            .timeline-item,
+            .timeline-item:nth-child(odd) {
+                width: 100%;
+                margin-left: 40px;
+                justify-content: flex-start;
+            }
+
+            .timeline-item:nth-child(even) {
+                margin-right: 0;
+            }
+
+            .timeline-content::before,
+            .timeline-item:nth-child(odd) .timeline-content::before,
+            .timeline-item:nth-child(even) .timeline-content::before {
+                left: -40px;
+            }
+        }
+
+        /* Floating particles */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: rgba(118, 255, 3, 0.3);
+            border-radius: 50%;
+            animation: float 15s infinite;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Floating Particles -->
+    <div class="particles" id="particles"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <ul>
+            <li><a href="#home">Home</a></li>
+            <li><a href="#pipeline">Pipeline</a></li>
+            <li><a href="#problem">Problem</a></li>
+            <li><a href="#solution">Solution</a></li>
+            <li><a href="#timeline">Timeline</a></li>
+            <li><a href="#results">Results</a></li>
+        </ul>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <canvas id="robot-canvas"></canvas>
+        <div class="hero-content">
+            <h1>Isaac Lab MimicGen</h1>
+            <p>NVIDIA Isaac Sim 기반 로봇 조작 데이터 자동 생성 파이프라인</p>
+            <div>
+                <span class="badge">NVIDIA Isaac Sim</span>
+                <span class="badge">MimicGen</span>
+                <span class="badge">Franka Robot</span>
+                <span class="badge">Docker</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pipeline Section -->
+    <section id="pipeline">
+        <h2>🔄 Data Generation Pipeline</h2>
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="icon">🎮</div>
+                <h3>1. Human Demo</h3>
+                <p>사람이 로봇 조작 시연을 기록</p>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🏷️</div>
+                <h3>2. Annotation</h3>
+                <p>시연에 서브태스크 정보 주석 추가</p>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🤖</div>
+                <h3>3. MimicGen</h3>
+                <p>주석된 시연으로 합성 데이터 자동 생성</p>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🎨</div>
+                <h3>4. Cosmos</h3>
+                <p>NVIDIA Cosmos로 비주얼 증강</p>
+            </div>
+        </div>
+
+        <!-- 3D Robot Scene -->
+        <div id="robot-scene"></div>
+    </section>
+
+    <!-- Problem Section -->
+    <section id="problem">
+        <h2>⚠️ 문제 상황: AsyncIO Event Loop 충돌</h2>
+        <div class="problem-viz">
+            <div class="event-loop-box jupyter">
+                <h4>🐍 Jupyter</h4>
+                <p>IPykernel Event Loop</p>
+                <small>메인 루프 제어</small>
+            </div>
+            <div class="conflict-icon">⚡</div>
+            <div class="event-loop-box isaac">
+                <h4>🎮 Isaac Sim</h4>
+                <p>Kit Async Engine</p>
+                <small>시뮬레이션 루프</small>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 40px; padding: 30px; background: rgba(244, 67, 54, 0.1); border-radius: 15px;">
+            <h3 style="color: #ff5252;">💥 충돌 원인</h3>
+            <p style="margin-top: 15px; color: #b0bec5; max-width: 600px; margin-left: auto; margin-right: auto;">
+                Jupyter와 Isaac Sim이 각각 자체 asyncio 이벤트 루프를 사용<br>
+                <code style="color: #ff5252;">AssertionError: events._get_running_loop() is self</code><br>
+                Kit의 async_engine 검증 실패로 무한 블로킹 발생
+            </p>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section id="solution">
+        <h2>✅ 해결책: Standalone Script + nest_asyncio</h2>
+        <div class="solution-grid">
+            <div class="solution-card">
+                <h3>🔧 nest_asyncio</h3>
+                <p>중첩된 asyncio 이벤트 루프를 허용하여 충돌 해결</p>
+                <code>import nest_asyncio<br>nest_asyncio.apply()</code>
+            </div>
+            <div class="solution-card">
+                <h3>📦 공식 API 사용</h3>
+                <p>Isaac Lab의 공식 데이터 생성 API 활용</p>
+                <code>setup_async_generation()<br>env_loop()</code>
+            </div>
+            <div class="solution-card">
+                <h3>🖥️ Standalone 실행</h3>
+                <p>Jupyter 대신 독립 Python 스크립트로 실행</p>
+                <code>python.sh -u generate_data_standalone.py</code>
+            </div>
+            <div class="solution-card">
+                <h3>🐳 Docker 컨테이너</h3>
+                <p>격리된 환경에서 안정적인 실행 보장</p>
+                <code>docker exec isaac-lab-1 ...</code>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section id="architecture">
+        <h2>🏗️ 시스템 아키텍처</h2>
+        <div class="architecture">
+            <div class="arch-layer">
+                <div class="arch-box docker">🐳 Docker Container</div>
+            </div>
+            <div class="arch-connector">↓</div>
+            <div class="arch-layer">
+                <div class="arch-box isaac">🎮 Isaac Sim 4.5</div>
+                <div class="arch-box isaac">🤖 Isaac Lab</div>
+            </div>
+            <div class="arch-connector">↓</div>
+            <div class="arch-layer">
+                <div class="arch-box python">🐍 Python Standalone</div>
+                <div class="arch-box python">📓 Jupyter Notebook</div>
+            </div>
+            <div class="arch-connector">↓</div>
+            <div class="arch-layer">
+                <div class="arch-box data">📊 HDF5 Dataset</div>
+                <div class="arch-box data">🖼️ PNG Images</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Timeline Section -->
+    <section id="timeline">
+        <h2>📅 개발 타임라인</h2>
+        <div class="timeline">
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">v6</span>
+                    <h3>run_until_complete()</h3>
+                    <p>기본 asyncio 루프 사용 시도</p>
+                    <span class="status fail">❌ 블로킹</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">v7</span>
+                    <h3>ThreadPoolExecutor</h3>
+                    <p>스레드 풀로 비동기 실행 시도</p>
+                    <span class="status fail">❌ 블로킹</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">v8</span>
+                    <h3>simulation_app.update()</h3>
+                    <p>폴링 + 스레드 조합 시도</p>
+                    <span class="status fail">❌ 블로킹</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">v1-v4</span>
+                    <h3>Standalone 시도들</h3>
+                    <p>DummyLock, Kit 루프 직접 접근 등</p>
+                    <span class="status fail">❌ AssertionError</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">v5 ★</span>
+                    <h3>nest_asyncio + 공식 API</h3>
+                    <p>nest_asyncio 적용 + Isaac Lab 공식 API 사용</p>
+                    <span class="status success">✅ 성공!</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <span class="version">Git</span>
+                    <h3>버전 관리 설정</h3>
+                    <p>개인 GitHub 저장소로 이전 및 커밋</p>
+                    <span class="status success">✅ 완료</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section id="results">
+        <h2>📊 실행 결과</h2>
+        <div class="results-grid">
+            <div class="result-card">
+                <div class="number">1</div>
+                <div class="label">성공한 시도</div>
+            </div>
+            <div class="result-card">
+                <div class="number">0</div>
+                <div class="label">실패한 시도</div>
+            </div>
+            <div class="result-card">
+                <div class="number">186</div>
+                <div class="label">KB HDF5 데이터</div>
+            </div>
+            <div class="result-card">
+                <div class="number">912</div>
+                <div class="label">PNG 이미지</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 50px; text-align: center;">
+            <h3 style="color: #76ff03; margin-bottom: 20px;">생성된 데이터 구조</h3>
+            <div style="display: inline-block; text-align: left; background: rgba(0,0,0,0.5); padding: 20px 40px; border-radius: 15px; font-family: monospace;">
+                <pre style="color: #76ff03;">
+datasets/
+└── generated_dataset.hdf5 (186KB)
+    └── demo_0/
+        ├── actions
+        ├── initial_state
+        ├── obs
+        └── states
+
+output/
+├── normals/     (456 images)
+└── segmentation/ (456 images)
+                </pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>
+            <a href="https://github.com/scholarchoi-yjchoi/mimicgen" target="_blank">
+                🔗 GitHub Repository
+            </a>
+        </p>
+        <p style="margin-top: 15px; color: #666;">
+            Based on NVIDIA Omniverse Blueprint<br>
+            Developed with Claude Code
+        </p>
+    </footer>
+
+    <script>
+        // Create floating particles
+        const particlesContainer = document.getElementById('particles');
+        for (let i = 0; i < 30; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.animationDelay = Math.random() * 15 + 's';
+            particle.style.animationDuration = (10 + Math.random() * 10) + 's';
+            particlesContainer.appendChild(particle);
+        }
+
+        // Three.js Hero Robot Animation
+        const heroCanvas = document.getElementById('robot-canvas');
+        const heroScene = new THREE.Scene();
+        const heroCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const heroRenderer = new THREE.WebGLRenderer({ canvas: heroCanvas, alpha: true, antialias: true });
+        heroRenderer.setSize(window.innerWidth, window.innerHeight);
+        heroRenderer.setPixelRatio(window.devicePixelRatio);
+
+        // Create robot arm (simplified)
+        const robotGroup = new THREE.Group();
+
+        // Base
+        const baseGeometry = new THREE.CylinderGeometry(1, 1.2, 0.5, 32);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        robotGroup.add(base);
+
+        // Joint 1
+        const joint1Geometry = new THREE.CylinderGeometry(0.3, 0.3, 2, 16);
+        const jointMaterial = new THREE.MeshPhongMaterial({ color: 0x76ff03 });
+        const joint1 = new THREE.Mesh(joint1Geometry, jointMaterial);
+        joint1.position.y = 1.25;
+        robotGroup.add(joint1);
+
+        // Joint 2
+        const joint2 = new THREE.Mesh(joint1Geometry.clone(), jointMaterial);
+        joint2.position.y = 2.5;
+        joint2.rotation.z = Math.PI / 4;
+        robotGroup.add(joint2);
+
+        // End effector (gripper)
+        const gripperGroup = new THREE.Group();
+        const fingerGeometry = new THREE.BoxGeometry(0.1, 0.5, 0.1);
+        const fingerMaterial = new THREE.MeshPhongMaterial({ color: 0x00e676 });
+
+        const finger1 = new THREE.Mesh(fingerGeometry, fingerMaterial);
+        finger1.position.x = 0.2;
+        gripperGroup.add(finger1);
+
+        const finger2 = new THREE.Mesh(fingerGeometry, fingerMaterial);
+        finger2.position.x = -0.2;
+        gripperGroup.add(finger2);
+
+        gripperGroup.position.y = 3.8;
+        gripperGroup.position.x = 1.5;
+        robotGroup.add(gripperGroup);
+
+        // Cubes (stacking task)
+        const cubeGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const cube1Material = new THREE.MeshPhongMaterial({ color: 0xff5722 });
+        const cube2Material = new THREE.MeshPhongMaterial({ color: 0x2196f3 });
+        const cube3Material = new THREE.MeshPhongMaterial({ color: 0xffeb3b });
+
+        const cube1 = new THREE.Mesh(cubeGeometry, cube1Material);
+        cube1.position.set(3, 0.25, 0);
+        heroScene.add(cube1);
+
+        const cube2 = new THREE.Mesh(cubeGeometry, cube2Material);
+        cube2.position.set(3, 0.75, 0);
+        heroScene.add(cube2);
+
+        const cube3 = new THREE.Mesh(cubeGeometry, cube3Material);
+        cube3.position.set(-2, 0.25, 1);
+        heroScene.add(cube3);
+
+        // Table
+        const tableGeometry = new THREE.BoxGeometry(10, 0.2, 6);
+        const tableMaterial = new THREE.MeshPhongMaterial({ color: 0x8d6e63 });
+        const table = new THREE.Mesh(tableGeometry, tableMaterial);
+        table.position.y = -0.1;
+        heroScene.add(table);
+
+        heroScene.add(robotGroup);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        heroScene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 10, 5);
+        heroScene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(0x76ff03, 1, 100);
+        pointLight.position.set(0, 5, 5);
+        heroScene.add(pointLight);
+
+        heroCamera.position.set(6, 4, 6);
+        heroCamera.lookAt(0, 1, 0);
+
+        // Animation
+        let time = 0;
+        function animateHero() {
+            requestAnimationFrame(animateHero);
+            time += 0.02;
+
+            // Robot arm animation
+            joint2.rotation.z = Math.PI / 4 + Math.sin(time) * 0.3;
+            gripperGroup.position.x = 1.5 + Math.sin(time) * 0.5;
+            gripperGroup.position.y = 3.8 + Math.cos(time) * 0.3;
+
+            // Gripper open/close
+            finger1.position.x = 0.2 + Math.sin(time * 2) * 0.1;
+            finger2.position.x = -0.2 - Math.sin(time * 2) * 0.1;
+
+            // Floating cubes
+            cube3.position.y = 0.25 + Math.sin(time * 1.5) * 0.1;
+            cube3.rotation.y = time * 0.5;
+
+            // Camera subtle movement
+            heroCamera.position.x = 6 + Math.sin(time * 0.3) * 0.5;
+            heroCamera.lookAt(0, 1, 0);
+
+            heroRenderer.render(heroScene, heroCamera);
+        }
+        animateHero();
+
+        // Three.js Pipeline Robot Scene
+        const robotSceneContainer = document.getElementById('robot-scene');
+        const pipelineScene = new THREE.Scene();
+        pipelineScene.background = new THREE.Color(0x1a1a2e);
+
+        const pipelineCamera = new THREE.PerspectiveCamera(60, robotSceneContainer.clientWidth / robotSceneContainer.clientHeight, 0.1, 1000);
+        const pipelineRenderer = new THREE.WebGLRenderer({ antialias: true });
+        pipelineRenderer.setSize(robotSceneContainer.clientWidth, robotSceneContainer.clientHeight);
+        robotSceneContainer.appendChild(pipelineRenderer.domElement);
+
+        // Create a more detailed robot for pipeline section
+        const frankaGroup = new THREE.Group();
+
+        // Robot parts with glowing effect
+        const glowMaterial = new THREE.MeshPhongMaterial({
+            color: 0x76ff03,
+            emissive: 0x76ff03,
+            emissiveIntensity: 0.3
+        });
+
+        // Base
+        const frankaBase = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.8, 1, 0.4, 32),
+            new THREE.MeshPhongMaterial({ color: 0x444444 })
+        );
+        frankaGroup.add(frankaBase);
+
+        // Segments
+        for (let i = 0; i < 5; i++) {
+            const segment = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.2, 0.25, 1.2, 16),
+                glowMaterial
+            );
+            segment.position.y = 0.8 + i * 0.8;
+            segment.rotation.z = Math.sin(i * 0.5) * 0.3;
+            frankaGroup.add(segment);
+        }
+
+        pipelineScene.add(frankaGroup);
+
+        // Add grid
+        const gridHelper = new THREE.GridHelper(10, 20, 0x76ff03, 0x333333);
+        gridHelper.position.y = -0.2;
+        pipelineScene.add(gridHelper);
+
+        // Lighting for pipeline scene
+        const pipelineAmbient = new THREE.AmbientLight(0xffffff, 0.4);
+        pipelineScene.add(pipelineAmbient);
+
+        const pipelineSpot = new THREE.SpotLight(0x76ff03, 2);
+        pipelineSpot.position.set(5, 10, 5);
+        pipelineScene.add(pipelineSpot);
+
+        pipelineCamera.position.set(5, 4, 5);
+        pipelineCamera.lookAt(0, 2, 0);
+
+        // Animate pipeline scene
+        function animatePipeline() {
+            requestAnimationFrame(animatePipeline);
+            frankaGroup.rotation.y += 0.005;
+            pipelineRenderer.render(pipelineScene, pipelineCamera);
+        }
+        animatePipeline();
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            heroCamera.aspect = window.innerWidth / window.innerHeight;
+            heroCamera.updateProjectionMatrix();
+            heroRenderer.setSize(window.innerWidth, window.innerHeight);
+
+            if (robotSceneContainer.clientWidth > 0) {
+                pipelineCamera.aspect = robotSceneContainer.clientWidth / robotSceneContainer.clientHeight;
+                pipelineCamera.updateProjectionMatrix();
+                pipelineRenderer.setSize(robotSceneContainer.clientWidth, robotSceneContainer.clientHeight);
+            }
+        });
+
+        // Smooth scroll
+        document.querySelectorAll('nav a').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                document.querySelector(targetId).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
