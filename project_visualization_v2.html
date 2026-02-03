@@ -1,0 +1,1726 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isaac Lab MimicGen - Project Journey</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --nvidia-green: #76b900;
+            --nvidia-dark: #1a1a2e;
+            --nvidia-gray: #2d2d44;
+            --accent-blue: #00d4ff;
+            --accent-orange: #ff6b35;
+            --accent-purple: #a855f7;
+            --success-green: #22c55e;
+            --error-red: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--nvidia-dark) 0%, #0f0f1a 100%);
+            color: #ffffff;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: rgba(26, 26, 46, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(118, 185, 0, 0.3);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--nvidia-green);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: #ccc;
+            text-decoration: none;
+            transition: color 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .nav-links a:hover {
+            color: var(--nvidia-green);
+        }
+
+        /* Hero Section */
+        .hero {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #hero-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            max-width: 900px;
+            padding: 2rem;
+        }
+
+        .hero h1 {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, var(--nvidia-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        .hero .subtitle {
+            font-size: 1.5rem;
+            color: #aaa;
+            margin-bottom: 2rem;
+            animation: fadeInUp 1s ease-out 0.2s both;
+        }
+
+        .hero .description {
+            font-size: 1.1rem;
+            color: #888;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            animation: fadeInUp 1s ease-out 0.4s both;
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            animation: bounce 2s infinite;
+        }
+
+        .scroll-indicator::before {
+            content: '';
+            display: block;
+            width: 30px;
+            height: 50px;
+            border: 2px solid var(--nvidia-green);
+            border-radius: 15px;
+            position: relative;
+        }
+
+        .scroll-indicator::after {
+            content: '';
+            display: block;
+            width: 6px;
+            height: 10px;
+            background: var(--nvidia-green);
+            border-radius: 3px;
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: scrollDot 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(10px); }
+        }
+
+        @keyframes scrollDot {
+            0%, 100% { opacity: 1; top: 8px; }
+            50% { opacity: 0.3; top: 20px; }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Section Styles */
+        section {
+            padding: 6rem 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            color: var(--nvidia-green);
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 4rem;
+            font-size: 1.1rem;
+        }
+
+        /* Overview Section */
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .overview-card {
+            background: rgba(45, 45, 68, 0.5);
+            border: 1px solid rgba(118, 185, 0, 0.2);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .overview-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--nvidia-green), var(--accent-blue));
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.3s ease;
+        }
+
+        .overview-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .overview-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .overview-card .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .overview-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #fff;
+        }
+
+        .overview-card p {
+            color: #aaa;
+            font-size: 0.95rem;
+        }
+
+        /* Pipeline Section */
+        .pipeline {
+            background: linear-gradient(180deg, rgba(45, 45, 68, 0.3) 0%, transparent 100%);
+            border-radius: 24px;
+            padding: 4rem 2rem;
+            margin: 4rem 0;
+        }
+
+        .pipeline-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            position: relative;
+        }
+
+        .pipeline-step {
+            flex: 1;
+            min-width: 200px;
+            max-width: 250px;
+            text-align: center;
+            padding: 2rem 1rem;
+            background: rgba(26, 26, 46, 0.8);
+            border-radius: 16px;
+            border: 1px solid rgba(118, 185, 0, 0.2);
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .pipeline-step:hover {
+            border-color: var(--nvidia-green);
+            transform: scale(1.05);
+        }
+
+        .pipeline-step .step-number {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 30px;
+            background: var(--nvidia-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .pipeline-step .icon {
+            font-size: 2.5rem;
+            margin: 1rem 0;
+        }
+
+        .pipeline-step h4 {
+            color: #fff;
+            margin-bottom: 0.5rem;
+        }
+
+        .pipeline-step p {
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        .pipeline-arrow {
+            font-size: 2rem;
+            color: var(--nvidia-green);
+            animation: arrowPulse 1.5s infinite;
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { opacity: 0.5; transform: translateX(0); }
+            50% { opacity: 1; transform: translateX(5px); }
+        }
+
+        /* Problem Section */
+        .problem-section {
+            position: relative;
+        }
+
+        .problem-visual {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 3rem;
+            margin: 3rem 0;
+            flex-wrap: wrap;
+        }
+
+        .conflict-box {
+            width: 200px;
+            height: 200px;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .jupyter-box {
+            background: linear-gradient(135deg, #f37626 0%, #e56717 100%);
+            animation: pulse 2s infinite;
+        }
+
+        .isaac-box {
+            background: linear-gradient(135deg, var(--nvidia-green) 0%, #5a8f00 100%);
+            animation: pulse 2s infinite 0.5s;
+        }
+
+        .conflict-box .icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .conflict-box h4 {
+            font-size: 1.1rem;
+        }
+
+        .conflict-box p {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        .vs-symbol {
+            font-size: 3rem;
+            color: var(--error-red);
+            animation: shake 0.5s infinite;
+            font-weight: bold;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 0 30px 10px rgba(255, 255, 255, 0.1); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0) rotate(0); }
+            25% { transform: translateX(-3px) rotate(-5deg); }
+            75% { transform: translateX(3px) rotate(5deg); }
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error-red);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 700px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--error-red);
+        }
+
+        /* Journey Timeline */
+        .journey-section {
+            position: relative;
+        }
+
+        .timeline {
+            position: relative;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--error-red) 0%, var(--accent-orange) 30%, var(--accent-blue) 70%, var(--success-green) 100%);
+            border-radius: 2px;
+        }
+
+        .timeline-item {
+            display: flex;
+            justify-content: flex-end;
+            padding: 1rem 0;
+            width: 50%;
+            position: relative;
+        }
+
+        .timeline-item:nth-child(odd) {
+            align-self: flex-end;
+            justify-content: flex-start;
+            margin-left: 50%;
+            padding-left: 3rem;
+        }
+
+        .timeline-item:nth-child(even) {
+            padding-right: 3rem;
+        }
+
+        .timeline-content {
+            background: rgba(45, 45, 68, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            max-width: 400px;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .timeline-content:hover {
+            transform: scale(1.02);
+            border-color: var(--nvidia-green);
+        }
+
+        .timeline-dot {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .timeline-item:nth-child(odd) .timeline-dot {
+            left: -10px;
+        }
+
+        .timeline-item:nth-child(even) .timeline-dot {
+            right: -10px;
+        }
+
+        .timeline-content.failed {
+            border-left: 3px solid var(--error-red);
+        }
+
+        .timeline-content.failed .timeline-dot {
+            background: var(--error-red);
+        }
+
+        .timeline-content.success {
+            border-left: 3px solid var(--success-green);
+        }
+
+        .timeline-content.success .timeline-dot {
+            background: var(--success-green);
+        }
+
+        .timeline-content h4 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-content .version {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .timeline-content p {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-content .result {
+            font-size: 0.85rem;
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .timeline-content .result.fail {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error-red);
+        }
+
+        .timeline-content .result.pass {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success-green);
+        }
+
+        /* Solution Section */
+        .solution-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .solution-card {
+            background: linear-gradient(135deg, rgba(45, 45, 68, 0.8) 0%, rgba(26, 26, 46, 0.8) 100%);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid rgba(118, 185, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .solution-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle at top right, rgba(118, 185, 0, 0.2) 0%, transparent 70%);
+        }
+
+        .solution-card .number {
+            font-size: 4rem;
+            font-weight: bold;
+            color: rgba(118, 185, 0, 0.2);
+            position: absolute;
+            top: 10px;
+            right: 20px;
+        }
+
+        .solution-card h3 {
+            color: var(--nvidia-green);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .solution-card p {
+            color: #aaa;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+
+        .solution-card code {
+            display: block;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+            overflow-x: auto;
+        }
+
+        /* Sessions Section */
+        .sessions-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .session-card {
+            background: rgba(45, 45, 68, 0.5);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .session-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--nvidia-green);
+        }
+
+        .session-header {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, var(--nvidia-green) 0%, #5a8f00 100%);
+        }
+
+        .session-header h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .session-header .date {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .session-body {
+            padding: 1.5rem;
+        }
+
+        .session-body ul {
+            list-style: none;
+        }
+
+        .session-body li {
+            padding: 0.5rem 0;
+            color: #aaa;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .session-body li::before {
+            content: '>';
+            color: var(--nvidia-green);
+            font-weight: bold;
+        }
+
+        .session-files {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .session-files h4 {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+        }
+
+        .file-tag {
+            display: inline-block;
+            background: rgba(0, 212, 255, 0.1);
+            color: var(--accent-blue);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin: 0.2rem;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Results Section */
+        .results-section {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(45, 45, 68, 0.5) 100%);
+            border-radius: 24px;
+            padding: 4rem 2rem;
+            margin: 4rem 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(26, 26, 46, 0.8);
+            border-radius: 16px;
+            border: 1px solid rgba(118, 185, 0, 0.2);
+        }
+
+        .stat-number {
+            font-size: 3.5rem;
+            font-weight: bold;
+            color: var(--nvidia-green);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 1rem;
+        }
+
+        .output-preview {
+            margin-top: 3rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .output-card {
+            background: rgba(26, 26, 46, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .output-card h4 {
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .output-card .tree {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #888;
+            line-height: 1.8;
+        }
+
+        .output-card .tree .folder {
+            color: var(--nvidia-green);
+        }
+
+        .output-card .tree .file {
+            color: var(--accent-blue);
+        }
+
+        /* 3D Canvas Container */
+        .canvas-container {
+            width: 100%;
+            height: 400px;
+            position: relative;
+            margin: 2rem 0;
+            border-radius: 16px;
+            overflow: hidden;
+            background: rgba(26, 26, 46, 0.5);
+        }
+
+        .canvas-container canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Command Section */
+        .command-section {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+
+        .command-section h4 {
+            color: var(--nvidia-green);
+            margin-bottom: 1rem;
+        }
+
+        .command-box {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            font-family: 'Courier New', monospace;
+            position: relative;
+            margin-bottom: 1rem;
+        }
+
+        .command-box .prompt {
+            color: var(--nvidia-green);
+        }
+
+        .command-box .cmd {
+            color: #fff;
+        }
+
+        .command-box .comment {
+            color: #666;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 3rem 2rem;
+            border-top: 1px solid rgba(118, 185, 0, 0.2);
+            margin-top: 4rem;
+        }
+
+        footer p {
+            color: #666;
+        }
+
+        footer a {
+            color: var(--nvidia-green);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero .subtitle {
+                font-size: 1.2rem;
+            }
+
+            .pipeline-container {
+                flex-direction: column;
+            }
+
+            .pipeline-arrow {
+                transform: rotate(90deg);
+            }
+
+            .timeline::before {
+                left: 20px;
+            }
+
+            .timeline-item,
+            .timeline-item:nth-child(odd) {
+                width: 100%;
+                margin-left: 0;
+                padding-left: 50px;
+                padding-right: 0;
+            }
+
+            .timeline-item:nth-child(odd) .timeline-dot,
+            .timeline-item:nth-child(even) .timeline-dot {
+                left: 10px;
+                right: auto;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .problem-visual {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="logo">MimicGen</div>
+        <ul class="nav-links">
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#pipeline">Pipeline</a></li>
+            <li><a href="#problem">Problem</a></li>
+            <li><a href="#journey">Journey</a></li>
+            <li><a href="#solution">Solution</a></li>
+            <li><a href="#sessions">Sessions</a></li>
+            <li><a href="#results">Results</a></li>
+        </ul>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <canvas id="hero-canvas"></canvas>
+        <div class="hero-content">
+            <h1>Isaac Lab MimicGen</h1>
+            <p class="subtitle">Synthetic Manipulation Motion Generation</p>
+            <p class="description">
+                NVIDIA Isaac Sim 기반의 로봇 매니퓰레이션 학습 데이터 합성 생성 프로젝트.
+                소량의 인간 시연 데이터로부터 대량의 다양한 학습 데이터를 자동 생성합니다.
+            </p>
+        </div>
+        <div class="scroll-indicator"></div>
+    </section>
+
+    <!-- Overview Section -->
+    <section id="overview">
+        <h2 class="section-title">Project Overview</h2>
+        <p class="section-subtitle">로봇 학습을 위한 합성 데이터 생성 파이프라인</p>
+
+        <div class="overview-grid">
+            <div class="overview-card">
+                <div class="icon">🤖</div>
+                <h3>Isaac Sim</h3>
+                <p>NVIDIA의 물리 기반 로봇 시뮬레이터. 현실적인 로봇 동작과 환경 상호작용을 시뮬레이션합니다.</p>
+            </div>
+            <div class="overview-card">
+                <div class="icon">🧪</div>
+                <h3>Isaac Lab</h3>
+                <p>Isaac Sim 위에서 동작하는 로봇 학습 프레임워크. 강화학습과 모방학습 환경을 제공합니다.</p>
+            </div>
+            <div class="overview-card">
+                <div class="icon">📊</div>
+                <h3>MimicGen</h3>
+                <p>소량의 시연 데이터를 증폭하여 대량의 다양한 학습 데이터를 생성하는 데이터 증강 시스템입니다.</p>
+            </div>
+            <div class="overview-card">
+                <div class="icon">🦾</div>
+                <h3>Franka Robot</h3>
+                <p>7-DOF 산업용 로봇 팔. 정밀한 매니퓰레이션 작업에 적합한 협동 로봇입니다.</p>
+            </div>
+            <div class="overview-card">
+                <div class="icon">📦</div>
+                <h3>Cube Stacking</h3>
+                <p>큐브를 집어서 쌓는 작업. 기본적이지만 복잡한 접촉 물리와 정밀 제어가 필요합니다.</p>
+            </div>
+            <div class="overview-card">
+                <div class="icon">🐳</div>
+                <h3>Docker Container</h3>
+                <p>NVIDIA NGC의 공식 Isaac Lab 컨테이너를 사용하여 재현 가능한 환경을 구성합니다.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pipeline Section -->
+    <section id="pipeline" class="pipeline">
+        <h2 class="section-title">Data Generation Pipeline</h2>
+        <p class="section-subtitle">시연 데이터에서 학습 데이터까지</p>
+
+        <div class="pipeline-container">
+            <div class="pipeline-step">
+                <span class="step-number">1</span>
+                <div class="icon">👆</div>
+                <h4>Human Demo</h4>
+                <p>10개의 인간 시연 데이터 (annotated_dataset.hdf5)</p>
+            </div>
+            <span class="pipeline-arrow">→</span>
+            <div class="pipeline-step">
+                <span class="step-number">2</span>
+                <div class="icon">🔄</div>
+                <h4>MimicGen</h4>
+                <p>동작 분해 및 재조합으로 다양한 변형 생성</p>
+            </div>
+            <span class="pipeline-arrow">→</span>
+            <div class="pipeline-step">
+                <span class="step-number">3</span>
+                <div class="icon">🎮</div>
+                <h4>Isaac Sim</h4>
+                <p>물리 시뮬레이션으로 실행 및 검증</p>
+            </div>
+            <span class="pipeline-arrow">→</span>
+            <div class="pipeline-step">
+                <span class="step-number">4</span>
+                <div class="icon">💾</div>
+                <h4>Output</h4>
+                <p>HDF5 데이터 + 렌더링 이미지</p>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="pipeline-canvas"></canvas>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section id="problem" class="problem-section">
+        <h2 class="section-title">The AsyncIO Problem</h2>
+        <p class="section-subtitle">Jupyter와 Isaac Sim의 이벤트 루프 충돌</p>
+
+        <div class="problem-visual">
+            <div class="conflict-box jupyter-box">
+                <div class="icon">📓</div>
+                <h4>Jupyter</h4>
+                <p>asyncio event loop</p>
+            </div>
+            <div class="vs-symbol">⚡</div>
+            <div class="conflict-box isaac-box">
+                <div class="icon">🎮</div>
+                <h4>Isaac Sim (Kit)</h4>
+                <p>asyncio event loop</p>
+            </div>
+        </div>
+
+        <div class="error-message">
+            <strong>AssertionError:</strong> assert events._get_running_loop() is self<br><br>
+            Kit의 async_engine이 현재 실행 중인 이벤트 루프가 자신의 것인지 검증하는데,<br>
+            Jupyter가 별도의 루프를 생성하여 검증 실패
+        </div>
+
+        <div class="solution-grid">
+            <div class="solution-card">
+                <span class="number">!</span>
+                <h3>증상</h3>
+                <p>"[Trial 1/5] 시작..." 메시지 이후 무한 대기 상태. 데이터 생성이 시작되지 않음.</p>
+            </div>
+            <div class="solution-card">
+                <span class="number">?</span>
+                <h3>원인</h3>
+                <p>Jupyter와 Kit이 각각 자체 asyncio 이벤트 루프를 사용. <code>asyncio.get_event_loop()</code>가 Kit의 루프 대신 새 루프를 반환.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Journey Timeline -->
+    <section id="journey" class="journey-section">
+        <h2 class="section-title">Development Journey</h2>
+        <p class="section-subtitle">문제 해결을 위한 여정 (v1 → v5)</p>
+
+        <div class="timeline">
+            <div class="timeline-item">
+                <div class="timeline-content failed">
+                    <div class="timeline-dot"></div>
+                    <h4><span class="version">v1</span> 기본 asyncio 루프</h4>
+                    <p>asyncio.new_event_loop() + run_until_complete() 사용</p>
+                    <span class="result fail">❌ __aenter__ 오류</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content failed">
+                    <div class="timeline-dot"></div>
+                    <h4><span class="version">v2</span> 더미 락 클래스</h4>
+                    <p>DummyAsyncLock 클래스로 async with 지원</p>
+                    <span class="result fail">❌ AssertionError 지속</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content failed">
+                    <div class="timeline-dot"></div>
+                    <h4><span class="version">v3</span> 공식 API 사용</h4>
+                    <p>setup_async_generation(), env_loop() 함수 사용</p>
+                    <span class="result fail">❌ 루프 충돌 지속</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content failed">
+                    <div class="timeline-dot"></div>
+                    <h4><span class="version">v4</span> Kit 루프 직접 접근</h4>
+                    <p>omni.kit.async_engine._loop 접근 시도</p>
+                    <span class="result fail">❌ AttributeError</span>
+                </div>
+            </div>
+            <div class="timeline-item">
+                <div class="timeline-content success">
+                    <div class="timeline-dot"></div>
+                    <h4><span class="version">v5</span> nest_asyncio + 공식 API</h4>
+                    <p>nest_asyncio.apply()로 중첩 이벤트 루프 허용</p>
+                    <span class="result pass">✅ 성공!</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section id="solution">
+        <h2 class="section-title">The Solution</h2>
+        <p class="section-subtitle">nest_asyncio + Standalone Script + Official API</p>
+
+        <div class="solution-grid">
+            <div class="solution-card">
+                <span class="number">1</span>
+                <h3>nest_asyncio</h3>
+                <p>중첩된 이벤트 루프를 허용하여 Jupyter와 Kit이 공존할 수 있게 함</p>
+                <code>import nest_asyncio<br>nest_asyncio.apply()</code>
+            </div>
+            <div class="solution-card">
+                <span class="number">2</span>
+                <h3>Standalone Script</h3>
+                <p>Jupyter 대신 독립 Python 스크립트로 실행하여 환경 충돌 최소화</p>
+                <code>generate_data_standalone.py</code>
+            </div>
+            <div class="solution-card">
+                <span class="number">3</span>
+                <h3>Official API</h3>
+                <p>Isaac Lab의 공식 함수 사용으로 안정성 확보</p>
+                <code>setup_async_generation()<br>env_loop()</code>
+            </div>
+            <div class="solution-card">
+                <span class="number">4</span>
+                <h3>Unbuffered Output</h3>
+                <p>Python -u 플래그로 실시간 로그 출력</p>
+                <code>python -u script.py</code>
+            </div>
+        </div>
+
+        <div class="command-section">
+            <h4>실행 명령어</h4>
+            <div class="command-box">
+                <span class="comment"># 기본 실행 (1회 생성)</span><br>
+                <span class="prompt">$</span> <span class="cmd">MODE=standalone docker compose run --rm isaac-lab</span>
+            </div>
+            <div class="command-box">
+                <span class="comment"># 다중 생성 (5회)</span><br>
+                <span class="prompt">$</span> <span class="cmd">MODE=standalone NUM_TRIALS=5 docker compose run --rm isaac-lab</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sessions Section -->
+    <section id="sessions">
+        <h2 class="section-title">Work Sessions</h2>
+        <p class="section-subtitle">프로젝트 개발 세션별 작업 내역</p>
+
+        <div class="sessions-container">
+            <div class="session-card">
+                <div class="session-header">
+                    <h3>Session 1: AsyncIO 문제 해결</h3>
+                    <span class="date">2026-02-03</span>
+                </div>
+                <div class="session-body">
+                    <ul>
+                        <li>Jupyter 노트북 Data Generation 셀 블로킹 문제 분석</li>
+                        <li>v1~v5까지 다양한 접근법 시도</li>
+                        <li>nest_asyncio + 공식 API로 최종 해결</li>
+                        <li>Standalone 스크립트 방식 채택</li>
+                    </ul>
+                    <div class="session-files">
+                        <h4>수정/생성 파일</h4>
+                        <span class="file-tag">generate_data_standalone.py</span>
+                        <span class="file-tag">docker-compose.yml</span>
+                        <span class="file-tag">launch.sh</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="session-card">
+                <div class="session-header">
+                    <h3>Session 2: Git 저장소 설정</h3>
+                    <span class="date">2026-02-03</span>
+                </div>
+                <div class="session-body">
+                    <ul>
+                        <li>NVIDIA 원본 저장소를 upstream으로 분리</li>
+                        <li>개인 저장소 설정 (origin)</li>
+                        <li>SSH 키 생성 및 GitHub 등록</li>
+                        <li>첫 커밋 및 push</li>
+                    </ul>
+                    <div class="session-files">
+                        <h4>수정/생성 파일</h4>
+                        <span class="file-tag">CLAUDE.md</span>
+                        <span class="file-tag">work_log.txt</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="session-card">
+                <div class="session-header">
+                    <h3>Session 3: 문서화 및 시각화</h3>
+                    <span class="date">2026-02-03</span>
+                </div>
+                <div class="session-body">
+                    <ul>
+                        <li>3D 애니메이션 시각화 HTML 생성</li>
+                        <li>기술 문서 (DOCX) 작성</li>
+                        <li>Three.js 기반 인터랙티브 데모</li>
+                    </ul>
+                    <div class="session-files">
+                        <h4>수정/생성 파일</h4>
+                        <span class="file-tag">project_visualization.html</span>
+                        <span class="file-tag">Technical_Report.docx</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="session-card">
+                <div class="session-header">
+                    <h3>Session 4: Standalone 모드 개선</h3>
+                    <span class="date">2026-02-03</span>
+                </div>
+                <div class="session-body">
+                    <ul>
+                        <li>출력 데이터 로컬 저장 (볼륨 마운트)</li>
+                        <li>NUM_TRIALS 환경 변수 지원</li>
+                        <li>컨테이너 재시작 방지 (run --rm)</li>
+                        <li>pip 의존성 자동 설치</li>
+                    </ul>
+                    <div class="session-files">
+                        <h4>수정/생성 파일</h4>
+                        <span class="file-tag">docker-compose.yml</span>
+                        <span class="file-tag">launch.sh</span>
+                        <span class="file-tag">generate_data_standalone.py</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section id="results" class="results-section">
+        <h2 class="section-title">Results</h2>
+        <p class="section-subtitle">데이터 생성 결과</p>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">10</div>
+                <div class="stat-label">입력 시연 데이터</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">3</div>
+                <div class="stat-label">성공 생성 (NUM_TRIALS=3)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">912+</div>
+                <div class="stat-label">렌더링 이미지</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">4</div>
+                <div class="stat-label">개발 세션</div>
+            </div>
+        </div>
+
+        <div class="output-preview">
+            <div class="output-card">
+                <h4>📁 datasets/</h4>
+                <div class="tree">
+                    <span class="folder">datasets/</span><br>
+                    ├── <span class="file">annotated_dataset.hdf5</span> (입력)<br>
+                    └── <span class="file">generated_dataset.hdf5</span> (출력)
+                </div>
+            </div>
+            <div class="output-card">
+                <h4>📁 output/</h4>
+                <div class="tree">
+                    <span class="folder">output/</span><br>
+                    ├── <span class="folder">table_cam_normals/</span><br>
+                    │   └── 0000.png ~ XXXX.png<br>
+                    ├── <span class="folder">table_cam_segmentation/</span><br>
+                    ├── <span class="folder">table_high_cam_normals/</span><br>
+                    └── <span class="folder">table_high_cam_segmentation/</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="results-canvas"></canvas>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>Isaac Lab MimicGen Project | Built with NVIDIA Isaac Sim</p>
+        <p>Visualization created with Three.js | <a href="https://github.com/scholarchoi-yjchoi/mimicgen">GitHub Repository</a></p>
+    </footer>
+
+    <script>
+        // ============================================
+        // Hero Canvas - 3D Robot Arm with Cube Stacking
+        // ============================================
+        function initHeroCanvas() {
+            const canvas = document.getElementById('hero-canvas');
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7);
+            scene.add(directionalLight);
+
+            const pointLight = new THREE.PointLight(0x76b900, 1, 100);
+            pointLight.position.set(-5, 5, 5);
+            scene.add(pointLight);
+
+            // Robot Arm Group
+            const robotArm = new THREE.Group();
+
+            // Base
+            const baseGeometry = new THREE.CylinderGeometry(0.8, 1, 0.3, 32);
+            const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.2 });
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            base.position.y = -2;
+            robotArm.add(base);
+
+            // Joint 1
+            const joint1Geometry = new THREE.CylinderGeometry(0.3, 0.3, 1.5, 16);
+            const jointMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.6, roughness: 0.3 });
+            const joint1 = new THREE.Mesh(joint1Geometry, jointMaterial);
+            joint1.position.y = -1.1;
+            robotArm.add(joint1);
+
+            // Link 1
+            const link1Geometry = new THREE.BoxGeometry(0.25, 1.2, 0.25);
+            const linkMaterial = new THREE.MeshStandardMaterial({ color: 0x76b900, metalness: 0.5, roughness: 0.4 });
+            const link1 = new THREE.Mesh(link1Geometry, linkMaterial);
+            link1.position.set(0, 0, 0);
+            robotArm.add(link1);
+
+            // Joint 2
+            const joint2Geometry = new THREE.SphereGeometry(0.2, 16, 16);
+            const joint2 = new THREE.Mesh(joint2Geometry, jointMaterial);
+            joint2.position.y = 0.7;
+            robotArm.add(joint2);
+
+            // Link 2
+            const link2 = new THREE.Mesh(link1Geometry, linkMaterial);
+            link2.position.set(0, 1.3, 0);
+            link2.rotation.z = 0.3;
+            robotArm.add(link2);
+
+            // Joint 3
+            const joint3 = new THREE.Mesh(joint2Geometry, jointMaterial);
+            joint3.position.set(0.35, 1.9, 0);
+            robotArm.add(joint3);
+
+            // Gripper
+            const gripperBase = new THREE.Mesh(
+                new THREE.BoxGeometry(0.4, 0.15, 0.3),
+                new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7, roughness: 0.3 })
+            );
+            gripperBase.position.set(0.6, 2.1, 0);
+            robotArm.add(gripperBase);
+
+            const fingerGeometry = new THREE.BoxGeometry(0.05, 0.3, 0.1);
+            const fingerMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.6 });
+
+            const finger1 = new THREE.Mesh(fingerGeometry, fingerMaterial);
+            finger1.position.set(0.6, 2.3, 0.1);
+            robotArm.add(finger1);
+
+            const finger2 = new THREE.Mesh(fingerGeometry, fingerMaterial);
+            finger2.position.set(0.6, 2.3, -0.1);
+            robotArm.add(finger2);
+
+            scene.add(robotArm);
+
+            // Cubes for stacking
+            const cubes = [];
+            const cubeColors = [0xff6b35, 0x00d4ff, 0xa855f7];
+
+            for (let i = 0; i < 3; i++) {
+                const cubeGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+                const cubeMaterial = new THREE.MeshStandardMaterial({
+                    color: cubeColors[i],
+                    metalness: 0.3,
+                    roughness: 0.5
+                });
+                const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+                cube.position.set(2 + i * 0.5, -1.6 + i * 0.5, i * 0.3 - 0.3);
+                scene.add(cube);
+                cubes.push(cube);
+            }
+
+            // Floor grid
+            const gridHelper = new THREE.GridHelper(10, 20, 0x76b900, 0x333333);
+            gridHelper.position.y = -2.15;
+            scene.add(gridHelper);
+
+            // Particles
+            const particleCount = 200;
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 20;
+                positions[i + 1] = (Math.random() - 0.5) * 20;
+                positions[i + 2] = (Math.random() - 0.5) * 20;
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x76b900,
+                size: 0.05,
+                transparent: true,
+                opacity: 0.6
+            });
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+
+            camera.position.set(4, 2, 6);
+            camera.lookAt(0, 0, 0);
+
+            // Animation
+            let time = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+                time += 0.01;
+
+                // Robot arm animation
+                robotArm.rotation.y = Math.sin(time * 0.5) * 0.3;
+                link2.rotation.z = 0.3 + Math.sin(time * 0.7) * 0.2;
+
+                // Cube floating animation
+                cubes.forEach((cube, i) => {
+                    cube.position.y = -1.6 + i * 0.5 + Math.sin(time + i) * 0.1;
+                    cube.rotation.y = time * 0.5 + i;
+                });
+
+                // Particle animation
+                particles.rotation.y = time * 0.1;
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Resize handler
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // ============================================
+        // Pipeline Canvas - Franka Robot Visualization
+        // ============================================
+        function initPipelineCanvas() {
+            const canvas = document.getElementById('pipeline-canvas');
+            const container = canvas.parentElement;
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 5, 5);
+            scene.add(dirLight);
+
+            // Franka-style robot
+            const frankaGroup = new THREE.Group();
+
+            // Create robot segments
+            const segments = [];
+            const heights = [0.5, 0.8, 0.6, 0.5, 0.4, 0.3, 0.2];
+            const radii = [0.3, 0.15, 0.12, 0.1, 0.08, 0.06, 0.05];
+
+            let currentY = 0;
+            heights.forEach((h, i) => {
+                const geo = new THREE.CylinderGeometry(radii[i], radii[i] * 1.1, h, 16);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: i % 2 === 0 ? 0xeeeeee : 0x76b900,
+                    metalness: 0.6,
+                    roughness: 0.3
+                });
+                const segment = new THREE.Mesh(geo, mat);
+                segment.position.y = currentY + h / 2;
+                currentY += h;
+                frankaGroup.add(segment);
+                segments.push(segment);
+
+                // Joint sphere
+                if (i < heights.length - 1) {
+                    const jointGeo = new THREE.SphereGeometry(radii[i] * 0.8, 16, 16);
+                    const joint = new THREE.Mesh(jointGeo, mat);
+                    joint.position.y = currentY;
+                    frankaGroup.add(joint);
+                }
+            });
+
+            // Gripper
+            const gripperMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7 });
+            const gripperBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.15), gripperMat);
+            gripperBase.position.y = currentY + 0.04;
+            frankaGroup.add(gripperBase);
+
+            const fingerGeo = new THREE.BoxGeometry(0.02, 0.15, 0.04);
+            const finger1 = new THREE.Mesh(fingerGeo, gripperMat);
+            const finger2 = new THREE.Mesh(fingerGeo, gripperMat);
+            finger1.position.set(0, currentY + 0.12, 0.05);
+            finger2.position.set(0, currentY + 0.12, -0.05);
+            frankaGroup.add(finger1, finger2);
+
+            frankaGroup.position.y = -1.5;
+            scene.add(frankaGroup);
+
+            // Table
+            const tableGeo = new THREE.BoxGeometry(4, 0.1, 2);
+            const tableMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8 });
+            const table = new THREE.Mesh(tableGeo, tableMat);
+            table.position.y = -1.55;
+            scene.add(table);
+
+            // Cubes on table
+            const colors = [0xff6b35, 0x00d4ff, 0xa855f7, 0x22c55e];
+            for (let i = 0; i < 4; i++) {
+                const cubeGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                const cubeMat = new THREE.MeshStandardMaterial({ color: colors[i] });
+                const cube = new THREE.Mesh(cubeGeo, cubeMat);
+                cube.position.set(1 + (i % 2) * 0.4 - 0.2, -1.4, (Math.floor(i / 2)) * 0.4 - 0.2);
+                scene.add(cube);
+            }
+
+            // Data flow particles
+            const flowParticles = [];
+            for (let i = 0; i < 50; i++) {
+                const pGeo = new THREE.SphereGeometry(0.02, 8, 8);
+                const pMat = new THREE.MeshBasicMaterial({
+                    color: 0x76b900,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const particle = new THREE.Mesh(pGeo, pMat);
+                particle.userData.offset = Math.random() * Math.PI * 2;
+                particle.userData.speed = 0.5 + Math.random() * 0.5;
+                particle.userData.radius = 2 + Math.random();
+                flowParticles.push(particle);
+                scene.add(particle);
+            }
+
+            camera.position.set(3, 2, 4);
+            camera.lookAt(0, 0, 0);
+
+            let time = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+                time += 0.02;
+
+                frankaGroup.rotation.y = time * 0.3;
+
+                // Animate data flow
+                flowParticles.forEach(p => {
+                    const t = time * p.userData.speed + p.userData.offset;
+                    p.position.x = Math.cos(t) * p.userData.radius;
+                    p.position.z = Math.sin(t) * p.userData.radius;
+                    p.position.y = Math.sin(t * 2) * 0.5;
+                });
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Resize observer
+            const resizeObserver = new ResizeObserver(() => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+            resizeObserver.observe(container);
+        }
+
+        // ============================================
+        // Results Canvas - Success Visualization
+        // ============================================
+        function initResultsCanvas() {
+            const canvas = document.getElementById('results-canvas');
+            const container = canvas.parentElement;
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 5);
+            scene.add(dirLight);
+
+            // Success cubes tower
+            const towerGroup = new THREE.Group();
+            const stackColors = [0x22c55e, 0x76b900, 0x00d4ff];
+
+            for (let i = 0; i < 3; i++) {
+                const cubeGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+                const cubeMat = new THREE.MeshStandardMaterial({
+                    color: stackColors[i],
+                    metalness: 0.3,
+                    roughness: 0.5
+                });
+                const cube = new THREE.Mesh(cubeGeo, cubeMat);
+                cube.position.y = i * 0.85;
+                towerGroup.add(cube);
+            }
+
+            towerGroup.position.set(-2, -1, 0);
+            scene.add(towerGroup);
+
+            // Data visualization - HDF5 representation
+            const dataGroup = new THREE.Group();
+
+            // File icon
+            const fileGeo = new THREE.BoxGeometry(1, 1.4, 0.1);
+            const fileMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6 });
+            const file = new THREE.Mesh(fileGeo, fileMat);
+            dataGroup.add(file);
+
+            // HDF5 label (simple representation)
+            const labelGeo = new THREE.PlaneGeometry(0.6, 0.2);
+            const labelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const label = new THREE.Mesh(labelGeo, labelMat);
+            label.position.z = 0.06;
+            label.position.y = 0.4;
+            dataGroup.add(label);
+
+            // Data layers
+            for (let i = 0; i < 4; i++) {
+                const layerGeo = new THREE.BoxGeometry(0.7, 0.08, 0.05);
+                const layerMat = new THREE.MeshStandardMaterial({
+                    color: i === 0 ? 0x22c55e : 0x64748b
+                });
+                const layer = new THREE.Mesh(layerGeo, layerMat);
+                layer.position.y = -0.3 + i * 0.15;
+                layer.position.z = 0.08;
+                dataGroup.add(layer);
+            }
+
+            dataGroup.position.set(2, 0, 0);
+            scene.add(dataGroup);
+
+            // Connection lines
+            const lineGeo = new THREE.BufferGeometry();
+            const linePoints = [
+                new THREE.Vector3(-1, 0, 0),
+                new THREE.Vector3(0, 0.5, 0),
+                new THREE.Vector3(1, 0, 0)
+            ];
+            lineGeo.setFromPoints(linePoints);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x76b900 });
+            const line = new THREE.Line(lineGeo, lineMat);
+            scene.add(line);
+
+            // Success particles
+            const particleCount = 100;
+            const particleGeo = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 10;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * 6;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 6;
+
+                const color = new THREE.Color(Math.random() > 0.5 ? 0x76b900 : 0x22c55e);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const particleMat = new THREE.PointsMaterial({
+                size: 0.1,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+            const particles = new THREE.Points(particleGeo, particleMat);
+            scene.add(particles);
+
+            camera.position.set(0, 1, 6);
+            camera.lookAt(0, 0, 0);
+
+            let time = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+                time += 0.02;
+
+                towerGroup.rotation.y = time * 0.5;
+                dataGroup.rotation.y = Math.sin(time * 0.3) * 0.2;
+
+                // Animate tower cubes
+                towerGroup.children.forEach((cube, i) => {
+                    cube.position.y = i * 0.85 + Math.sin(time + i) * 0.05;
+                });
+
+                particles.rotation.y = time * 0.1;
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            const resizeObserver = new ResizeObserver(() => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+            resizeObserver.observe(container);
+        }
+
+        // ============================================
+        // Smooth scroll for navigation
+        // ============================================
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // ============================================
+        // Intersection Observer for animations
+        // ============================================
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.opacity = '1';
+                    entry.target.style.transform = 'translateY(0)';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.overview-card, .pipeline-step, .solution-card, .session-card, .stat-card').forEach(el => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(30px)';
+            el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+            observer.observe(el);
+        });
+
+        // ============================================
+        // Initialize all canvases
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            initHeroCanvas();
+            initPipelineCanvas();
+            initResultsCanvas();
+        });
+    </script>
+</body>
+</html>
