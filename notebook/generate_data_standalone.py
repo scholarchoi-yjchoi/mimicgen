@@ -52,10 +52,14 @@ args_cli.enable_cameras = True
 args_cli.kit_args = "--enable omni.videoencoding"
 args_cli.headless = True
 
+# 환경 변수에서 생성 횟수 읽기 (기본값: 1)
+num_trials = int(os.environ.get("NUM_TRIALS", "1"))
+print(f"[설정] 목표 생성 횟수: {num_trials}", flush=True)
+
 config = {
     "task": "Isaac-Stack-Cube-Franka-IK-Rel-Blueprint-Mimic-v0",
     "num_envs": 1,
-    "generation_num_trials": 1,
+    "generation_num_trials": num_trials,
     "input_file": "datasets/annotated_dataset.hdf5",
     "output_file": "datasets/generated_dataset.hdf5",
     "pause_subtask": False,

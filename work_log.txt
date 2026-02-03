@@ -272,4 +272,136 @@ libreoffice Isaac_Lab_MimicGen_Technical_Report.docx
 ```
 
 ---
+
+## 세션 4: Standalone 모드 개선
+
+### 작업 일시
+2026-02-03
+
+### 목적
+- Standalone 모드 실행 시 출력 데이터가 로컬 PC에 저장되도록 수정
+- 생성 횟수를 환경 변수로 설정 가능하게 변경
+- 컨테이너 무한 재시작 문제 해결
+
+### 문제 상황
+
+#### 문제 1: 출력 데이터 손실
+- 기존: 입력 파일만 마운트 (`samples/annotated_dataset.hdf5`)
+- 출력 파일(`generated_dataset.hdf5`)과 이미지(`output/`)가 컨테이너 내부에만 저장
+- 컨테이너 종료 시 생성된 데이터 손실
+
+#### 문제 2: 컨테이너 무한 재시작
+- `restart: unless-stopped` 설정으로 작업 완료 후에도 재시작
+
+#### 문제 3: 생성 횟수 고정
+- `generation_num_trials: 1` 하드코딩되어 변경 불가
+
+### 해결 방법
+
+#### 1. 로컬 폴더 생성 및 입력 파일 복사
+```bash
+mkdir -p datasets output
+cp samples/annotated_dataset.hdf5 datasets/
+```
+
+#### 2. docker-compose.yml 수정
+
+**환경 변수 추가:**
+```yaml
+environment:
+  MODE: ${MODE:-jupyter}
+  NUM_TRIALS: ${NUM_TRIALS:-1}
+```
+
+**볼륨 마운트 변경:**
+```yaml
+volumes:
+  - ./datasets:/workspace/isaaclab/datasets    # 폴더 전체 마운트
+  - ./output:/workspace/isaaclab/output        # 출력 이미지 마운트 추가
+```
+
+#### 3. generate_data_standalone.py 수정
+
+```python
+# 환경 변수에서 생성 횟수 읽기 (기본값: 1)
+num_trials = int(os.environ.get("NUM_TRIALS", "1"))
+print(f"[설정] 목표 생성 횟수: {num_trials}", flush=True)
+
+config = {
+    "generation_num_trials": num_trials,
+    ...
+}
+```
+
+#### 4. launch.sh 수정
+
+```bash
+# 필수 패키지 설치 추가
+/isaac-sim/kit/python/bin/python3 -m pip install nest_asyncio toml -q
+```
+
+### 실행 방법
+
+```bash
+# 기본 실행 (1회 생성)
+MODE=standalone docker compose run --rm isaac-lab
+
+# 여러 번 생성 (예: 5회)
+MODE=standalone NUM_TRIALS=5 docker compose run --rm isaac-lab
+```
+
+**핵심**: `docker compose run --rm` 사용으로 재시작 방지
+
+### 실행 결과
+
+```
+MODE=standalone NUM_TRIALS=3 docker compose run --rm isaac-lab
+
+[설정] 목표 생성 횟수: 3
+...
+have 3 successes out of 12 trials so far
+Reached 3 successes/attempts. Exiting.
+
+[완료]
+      총 시도: 12회
+      성공: 3, 실패: 9
+```
+
+### 생성된 출력 파일
+
+```
+datasets/
+├── annotated_dataset.hdf5   (입력)
+└── generated_dataset.hdf5   (출력 - 새로 생성)
+
+output/
+├── table_cam_normals/
+├── table_cam_segmentation/
+├── table_high_cam_normals/
+└── table_high_cam_segmentation/
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `docker-compose.yml` | MODE, NUM_TRIALS 환경 변수 + datasets, output 볼륨 마운트 |
+| `launch.sh` | nest_asyncio, toml 패키지 설치 추가 |
+| `notebook/generate_data_standalone.py` | NUM_TRIALS 환경 변수 지원 |
+
+### pip 경고 메시지 설명
+
+실행 시 다음과 같은 pip 경고가 발생할 수 있음:
+```
+ERROR: pip's dependency resolver does not currently take into account
+all the packages that are installed.
+```
+
+이는 Isaac Sim 컨테이너 내에 두 개의 Python 환경이 있기 때문:
+- `/isaac-sim/kit/python/bin/python3`: 시스템 Python (패키지 설치용)
+- `./_isaac_sim/python.sh`: Isaac Sim Python (실행용)
+
+패키지 버전 충돌처럼 보이지만, 실제 실행에는 문제없음.
+
+---
 작성: Claude Code

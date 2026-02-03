@@ -10,6 +10,8 @@ services:
     environment:
       ACCEPT_EULA: Y
       DISPLAY: ${DISPLAY}
+      MODE: ${MODE:-jupyter}
+      NUM_TRIALS: ${NUM_TRIALS:-1}
     runtime: nvidia
     pull_policy: always
     deploy:
@@ -32,7 +34,8 @@ services:
       - ./notebook/notebook_widgets.py:/workspace/isaaclab/notebook_widgets.py
       - ./notebook/stacking_prompt.toml:/workspace/isaaclab/stacking_prompt.toml
       - ./notebook/generate_data_standalone.py:/workspace/isaaclab/generate_data_standalone.py
-      - ./samples/annotated_dataset.hdf5:/workspace/isaaclab/datasets/annotated_dataset.hdf5
+      - ./datasets:/workspace/isaaclab/datasets
+      - ./output:/workspace/isaaclab/output
       - ./pip_overrides:/workspace/isaaclab/pip_overrides
     user: root
     working_dir: /workspace/isaaclab
