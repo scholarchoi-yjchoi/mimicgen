@@ -474,4 +474,1234 @@ libreoffice Isaac_Lab_MimicGen_Technical_Report_v2.docx
 ```
 
 ---
+
+## 세션 6: Jupyter 노트북 Data Generation 셀 수정
+
+### 작업 일시
+2026-02-04
+
+### 목적
+- Jupyter 노트북의 Data Generation 셀을 검증된 방식(v9)으로 수정
+- standalone 스크립트에서 성공한 공식 API 방식 적용
+
+### 문제 상황
+- 기존 v8 버전: 별도 스레드에서 `DataGenerator.generate()` 직접 호출
+- Threading + queue 방식으로 복잡하고, Kit 이벤트 루프와 충돌
+
+### 해결 방법
+
+#### v9: 공식 API 사용
+- `setup_async_generation()`: 비동기 생성 환경 설정
+- `env_loop()`: Isaac Lab 공식 데이터 생성 루프 실행
+- `nest_asyncio.apply()`는 이미 노트북 상단에 적용되어 있음
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v9 (공식 API) 방식으로 수정 |
+
+### 변경 전후 비교
+
+**변경 전 (v8):**
+```python
+# 별도 스레드에서 generation 실행
+thread = threading.Thread(
+    target=run_generate_in_thread,
+    args=(env.unwrapped, shared_datagen_info_pool, success_term, trial + 1),
+    daemon=True
+)
+thread.start()
+
+# 메인 스레드: simulation_app.update() 폴링
+while thread.is_alive():
+    simulation_app.update()
+    time.sleep(UPDATE_INTERVAL)
+```
+
+**변경 후 (v9):**
+```python
+# 공식 비동기 생성 설정
+async_gen = setup_async_generation(
+    env=env,
+    num_envs=args_cli.num_envs,
+    input_file=args_cli.input_file,
+    success_term=success_term,
+    pause_subtask=args_cli.pause_subtask
+)
+
+# 공식 env_loop 실행
+env_loop(
+    env=env,
+    env_action_queue=async_gen['action_queue'],
+    shared_datagen_info_pool=async_gen['info_pool'],
+    asyncio_event_loop=async_gen['event_loop']
+)
+```
+
+### 핵심 개선점
+1. **코드 단순화**: 100줄 이상 → 30줄 미만
+2. **안정성 향상**: 커스텀 스레드/큐 제거, 공식 API 사용
+3. **일관성**: standalone 스크립트와 동일한 방식
+
+### 테스트 방법
+```bash
+# Docker 컨테이너 시작
+xhost +local:
+docker compose up -d
+
+# Jupyter 노트북 접속
+# http://localhost:8888/lab/tree/generate_dataset.ipynb
+
+# "Spin up the Simulation" 셀 실행 후
+# "Data Generation" 셀 실행
+```
+
+---
+
+## 세션 7: ISAAC_JUPYTER_KERNEL 환경 변수 추가
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- 세션 6에서 v9로 수정한 Data Generation 셀이 여전히 무한 루프
+- `[*]` 상태로 멈추고 아무 출력 없음
+
+### 핵심 경고 메시지
+```
+[Warning] [simulation_app] Interactive python shell detected but ISAAC_JUPYTER_KERNEL was not set. Problems with asyncio may occur
+[Warning] [simulation_app] Please use Isaac Sim Python 3 kernel instead of the default Python 3 Kernel
+```
+
+### 원인 분석
+- Isaac Sim이 Jupyter 환경임을 인식하지 못함
+- `ISAAC_JUPYTER_KERNEL` 환경 변수 미설정
+- nest_asyncio만으로는 불충분
+
+### 해결 방법
+
+**수정 파일:** `docker-compose.yml`
+
+```yaml
+environment:
+  ACCEPT_EULA: Y
+  DISPLAY: ${DISPLAY}
+  MODE: ${MODE:-jupyter}
+  NUM_TRIALS: ${NUM_TRIALS:-1}
+  ISAAC_JUPYTER_KERNEL: "1"  # 추가
+```
+
+### 검증 방법
+
+```bash
+# 1. 컨테이너 재시작
+docker compose down && docker compose up -d
+
+# 2. Jupyter 접속 (http://localhost:8888)
+# 3. Kernel -> Restart Kernel and Clear Outputs
+# 4. Run -> Run All Cells
+
+# 확인 사항:
+# - 경고 메시지 "ISAAC_JUPYTER_KERNEL was not set" 사라짐
+# - Data Generation 셀 정상 실행
+```
+
+### 실패 시 대안
+Phase 2: subprocess로 standalone 스크립트 호출 방식
+
+### 결과
+- ISAAC_JUPYTER_KERNEL 경고 메시지 사라짐 ✓
+- 하지만 Data Generation 셀 여전히 무한 루프 ✗
+- **Phase 2 진행 필요**
+
+---
+
+## 세션 8: subprocess 방식 Data Generation (Phase 2)
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- Phase 1 (ISAAC_JUPYTER_KERNEL) 시도 → 실패
+- `env_loop()`가 동기적 블로킹 함수라서 Jupyter에서 출력 버퍼링됨
+- standalone 스크립트는 정상 작동 (검증됨)
+
+### 해결 방법
+
+**핵심 아이디어**: Jupyter에서 직접 `env_loop()` 호출 대신, subprocess로 검증된 standalone 스크립트 실행
+
+**수정 파일:** `notebook/generate_dataset.ipynb` - Data Generation 셀
+
+```python
+# v10: subprocess 방식 Data Generation
+import subprocess
+import os
+
+# 기존 simulation_app 종료 (리소스 충돌 방지)
+try:
+    simulation_app.close()
+except:
+    pass
+
+# 환경 변수 설정
+env = os.environ.copy()
+env["NUM_TRIALS"] = str(num_trials.value)
+
+# subprocess로 standalone 스크립트 실행
+process = subprocess.Popen(
+    ["/workspace/isaaclab/_isaac_sim/python.sh", "-u",
+     "/workspace/isaaclab/generate_data_standalone.py"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1,
+    env=env
+)
+
+# 실시간 출력 표시
+for line in iter(process.stdout.readline, ''):
+    print(line, end='', flush=True)
+```
+
+### 모드 설계 (향후 확장 준비)
+
+| 모드 | 설명 | 구현 상태 |
+|------|------|----------|
+| 기본값 모드 | subprocess + NUM_TRIALS만 전달 | **구현됨** |
+| 슬라이더 모드 | subprocess + 슬라이더 값 전달 | TODO (미구현) |
+
+### 검증 방법
+
+```bash
+# 1. Jupyter 접속 (http://localhost:8888)
+# 2. Kernel -> Restart Kernel and Clear Outputs
+# 3. Run -> Run All Cells
+
+# 확인 사항:
+# - Data Generation 셀에서 실시간 출력 표시
+# - "[SUCCESS] 데이터 생성 완료!" 메시지
+# - datasets/generated_dataset.hdf5 생성
+# - output/ 폴더에 이미지 생성
+```
+
+### 결과
+- v10 시도 → 부분 실패
+- subprocess가 블로킹됨 (출력 없음)
+- 출력이 이전 셀("Spin up the Simulation")에 나타남
+- **v11로 수정 필요**
+
+---
+
+## 세션 9: subprocess 방식 개선 (v11)
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v10에서 `simulation_app.close()` 후 subprocess가 블로킹됨
+- 출력이 이전 셀에 나타나는 문제
+- GPU 리소스 충돌 가능성
+
+### 근본 원인
+- 동일 프로세스에서 Isaac Sim 종료 후 subprocess로 새 Isaac Sim 시작 시 충돌
+- GPU 리소스가 완전히 해제되지 않은 상태에서 새 인스턴스 시작
+
+### 해결 방법 (v11)
+
+**핵심 변경:**
+1. `shell=True` - shell script 실행 문제 해결
+2. `start_new_session=True` - 별도 프로세스 그룹에서 실행
+3. `time.sleep(3)` - GPU 리소스 해제 대기
+4. `sys.stdout.flush()` - 출력 버퍼 강제 플러시
+5. `NameError` 처리 - simulation_app 없이도 작동
+
+**수정 파일:** `notebook/generate_dataset.ipynb` - Data Generation 셀
+
+```python
+# v11: subprocess 전용 Data Generation
+import subprocess
+import os
+import sys
+
+# 기존 simulation_app이 있으면 종료 시도 (없어도 OK)
+try:
+    simulation_app.close()
+    print("[INFO] 기존 simulation_app 종료됨")
+    import time
+    time.sleep(3)  # GPU 리소스 해제 대기
+except NameError:
+    print("[INFO] simulation_app 없음 - subprocess만 실행")
+
+# 환경 변수 설정
+env_vars = os.environ.copy()
+env_vars["NUM_TRIALS"] = str(num_trials.value)
+
+sys.stdout.flush()
+
+# subprocess로 standalone 스크립트 실행
+process = subprocess.Popen(
+    "/workspace/isaaclab/_isaac_sim/python.sh -u /workspace/isaaclab/generate_data_standalone.py",
+    shell=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1,
+    env=env_vars,
+    start_new_session=True
+)
+
+# 실시간 출력 표시
+for line in iter(process.stdout.readline, ''):
+    print(line, end='', flush=True)
+```
+
+### 검증 방법
+
+```bash
+# 1. Jupyter 접속 (http://localhost:8888)
+# 2. Kernel -> Restart Kernel and Clear Outputs
+# 3. Run -> Run All Cells
+
+# 확인 사항:
+# - Data Generation 셀에서 실시간 출력 표시
+# - "[SUCCESS] 데이터 생성 완료!" 메시지
+```
+
+### 결과
+- v11 시도 → 실패
+- subprocess.Popen이 여전히 블로킹됨
+- 출력이 여전히 이전 셀에 나타남
+- **v12로 수정 필요**
+
+---
+
+## 세션 10: IPython ! 명령 사용 (v12)
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v10, v11 (subprocess.Popen) 모두 실패
+- subprocess가 블로킹되고 출력이 이전 셀에 나타남
+- Isaac Sim이 Jupyter의 stdout을 가로챔
+
+### 근본 원인
+- `subprocess.Popen`의 stdout 캡처가 Isaac Sim 환경에서 작동하지 않음
+- Isaac Sim이 자체적으로 stdout을 관리하여 Jupyter 셀 출력과 충돌
+
+### 해결 방법 (v12)
+
+**핵심 변경:** `subprocess.Popen` → IPython `!` 명령
+- shell 직접 실행으로 stdout이 자연스럽게 셀 출력에 표시됨
+- 코드 단순화
+
+**수정 파일:** `notebook/generate_dataset.ipynb` - Data Generation 셀
+
+```python
+# v12: IPython ! 명령 사용 Data Generation
+import os
+
+# 기존 simulation_app이 있으면 종료 시도
+try:
+    simulation_app.close()
+    import time
+    time.sleep(3)
+except NameError:
+    pass
+
+# 환경 변수 설정
+os.environ["NUM_TRIALS"] = str(num_trials.value)
+
+# IPython ! 명령으로 standalone 스크립트 실행
+!cd /workspace/isaaclab && ./_isaac_sim/python.sh -u generate_data_standalone.py
+```
+
+### 검증 방법
+
+```bash
+# 1. Jupyter 접속 (http://localhost:8888)
+# 2. Kernel -> Restart Kernel and Clear Outputs
+# 3. Run -> Run All Cells
+
+# 확인 사항:
+# - Data Generation 셀에서 실시간 출력
+# - "[완료] Data Generation 종료" 메시지
+```
+
+---
+
+## 세션 11: v13 - SKIP_SIMULATION + os.system 방식
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v10~v12 (subprocess.Popen, IPython !) 모두 동일한 문제 발생
+- subprocess가 블로킹되고 출력이 "Spin up the Simulation" 셀에 나타남
+- Data Generation 셀 자체는 `[*]` 상태로 무한 대기
+
+### 근본 원인 분석 (웹 검색 결과)
+
+#### 공식 문서에서 확인된 사항
+1. **"콜백 내부의 인쇄는 노트북에 표시되지 않고 Omniverse 터미널에 나타납니다"**
+   - [Isaac Sim Jupyter Notebook Documentation](https://docs.isaacsim.omniverse.nvidia.com/latest/development_tools/jupyter_notebook.html)
+2. **IPython 매직 명령(`!`)은 지원되지 않음**
+3. **"차단되는 코드 실행은 Isaac Sim을 정지시킵니다"**
+
+#### NVIDIA 포럼에서 확인된 사항
+- **별도 Python 셸에서 실행 중인 Isaac Sim 인스턴스로 연결할 수 없습니다**
+  - [NVIDIA Developer Forums](https://forums.developer.nvidia.com/t/isaac-sim-from-jupyter-notebook/195125)
+- subprocess로 별도 프로세스 실행 시 stdout이 원래 Isaac Sim 셀에 연결됨
+
+#### 핵심 결론
+**Isaac Sim이 시작되면 해당 셀의 출력 영역에 stdout이 고정됨.**
+이후 셀에서 어떤 방법(subprocess, IPython !, os.system 등)을 사용해도 출력이 첫 번째 셀("Spin up the Simulation")에 나타남.
+
+### 해결 방법 (v13)
+
+#### 핵심 아이디어
+- **Isaac Sim을 Jupyter에서 시작하지 않음**
+- "Spin up the Simulation" 셀을 스킵
+- Data Generation 셀에서 standalone 스크립트만 실행 (별도 프로세스)
+- stdout 리다이렉션 문제 원천 차단
+
+#### 노트북 흐름 변경
+
+**기존 (문제 발생):**
+```
+[Setup] → [Spin up Simulation] → [Parameters] → [Data Generation]
+              ↓ Isaac Sim 시작
+              ↓ stdout 고정됨
+              ↓ 이후 모든 출력이 여기에 나타남
+```
+
+**변경 후 (해결):**
+```
+[Setup] → [Spin up Simulation: SKIP] → [Parameters: SKIP] → [Data Generation]
+                                                                    ↓
+                                                        standalone 스크립트 실행
+                                                        (새로운 Isaac Sim)
+                                                                    ↓
+                                                        출력이 이 셀에 표시됨
+```
+
+### 수정 내용
+
+#### 1. "Spin up the Simulation" 셀 수정
+
+셀 시작 부분에 SKIP_SIMULATION 플래그 추가:
+
+```python
+# ============================================================
+# [선택] 이 셀은 Interactive Parameter Updates를 사용할 때만 실행
+# Data Generation만 필요하면 이 셀을 건너뛰세요 (다음 셀로 이동)
+# ============================================================
+SKIP_SIMULATION = True  # False로 변경하면 Simulation 실행
+
+if SKIP_SIMULATION:
+    print("=" * 60)
+    print("⚠️  Simulation 셀 스킵됨 (SKIP_SIMULATION = True)")
+    print("=" * 60)
+    print("💡 Data Generation 셀로 이동하세요")
+else:
+    # 기존 Isaac Sim 초기화 코드...
+```
+
+#### 2. "Data Generation" 셀 수정 (v13)
+
+```python
+# ============================================================
+# v13: Standalone 전용 Data Generation
+# - Jupyter에서 Isaac Sim을 시작하지 않고 별도 프로세스로 실행
+# - stdout이 이 셀에 직접 표시됨
+# ============================================================
+import os
+import sys
+
+print("=" * 60)
+print("[v13] Data Generation - Standalone 전용")
+print("=" * 60)
+
+# 환경 변수 설정
+os.environ["NUM_TRIALS"] = str(num_trials.value)
+
+print(f"[설정] 목표 생성 횟수: {num_trials.value}")
+print("-" * 60)
+print("standalone 스크립트 실행 중...")
+print("(출력이 여기에 표시됩니다)")
+print("-" * 60)
+sys.stdout.flush()
+
+# os.system으로 실행 (stdout이 셀에 직접 표시됨)
+return_code = os.system("cd /workspace/isaaclab && ./_isaac_sim/python.sh -u generate_data_standalone.py")
+
+if return_code != 0:
+    print(f"\n[ERROR] 종료 코드: {return_code}")
+else:
+    print("\n[SUCCESS] 데이터 생성 완료!")
+```
+
+### 사용 방법
+
+#### 방법 1: 셀 선택 실행 (권장)
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel → Restart Kernel and Clear Outputs
+3. "Setup Initial Configuration" 셀 실행
+4. "Spin up the Simulation" 셀 **스킵** (실행하지 않음)
+5. "Interactive Parameter Updates" 셀 **스킵** (실행하지 않음)
+6. "Data Generation" 셀 실행
+
+#### 방법 2: Run All Cells (SKIP_SIMULATION=True 설정 시)
+1. "Spin up the Simulation" 셀에서 `SKIP_SIMULATION = True` 확인
+2. Run All Cells 실행
+3. Simulation 셀이 자동으로 스킵됨
+
+### 예상 출력
+
+```
+============================================================
+[v13] Data Generation - Standalone 전용
+============================================================
+[설정] 목표 생성 횟수: 1
+------------------------------------------------------------
+standalone 스크립트 실행 중...
+(출력이 여기에 표시됩니다)
+------------------------------------------------------------
+============================================================
+[Standalone] Data Generation 시작 (v5 - nest_asyncio)
+============================================================
+PyTorch: x.x.x
+Torchvision: x.x.x
+[1/5] AppLauncher 시작 중...
+...
+[완료]
+      총 시도: N회
+      성공: N, 실패: N
+============================================================
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+### 설계 결정
+
+| 항목 | 결정 |
+|------|------|
+| 슬라이더 파라미터 | 기본값 사용 (사용자 확인) |
+| Interactive Parameters 셀 | 스킵 (기본값 사용 시 불필요) |
+| os.system vs subprocess | os.system 선택 (단순함, stdout 직접 표시) |
+
+### 향후 확장 가능성
+- 슬라이더 값을 환경 변수나 config 파일로 전달
+- standalone 스크립트에서 환경 변수 읽어 동적 설정
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | "Spin up Simulation" 셀에 SKIP 조건 추가 |
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v13 (os.system) 으로 수정 |
+
+### 참고 자료
+- [Isaac Sim Jupyter Notebook Documentation](https://docs.isaacsim.omniverse.nvidia.com/latest/development_tools/jupyter_notebook.html)
+- [NVIDIA Developer Forums - Isaac Sim Jupyter](https://forums.developer.nvidia.com/t/isaac-sim-from-jupyter-notebook/195125)
+
+### 테스트 상태
+- **실패**: toml 모듈 누락 에러 발생 → 세션 12에서 해결
+
+---
+
+## 세션 12: v14 - toml 모듈 누락 수정
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v13 실행 시 `ModuleNotFoundError: No module named 'toml'` 에러 발생
+- `isaaclab.app`에서 `import toml` 실패
+
+### 원인 분석
+
+**`launch.sh` 파일 확인 결과:**
+
+| 모드 | 설치 패키지 |
+|------|-------------|
+| Jupyter 모드 (기본) | `jupyter`만 설치 |
+| Standalone 모드 | `nest_asyncio toml` 설치 |
+
+**문제**: Jupyter 모드로 시작된 컨테이너에서 `os.system()`으로 standalone 스크립트 실행 시, `toml` 패키지가 Isaac Sim Python 환경에 없음
+
+### 해결 방법 (v14)
+
+**핵심 변경**: Data Generation 셀에서 standalone 스크립트 실행 **전에** 필수 패키지 설치
+
+```python
+# 필수 패키지 설치 (Isaac Sim Python 환경에)
+print("[1/2] 필수 패키지 설치 중...")
+sys.stdout.flush()
+install_code = os.system("/workspace/isaaclab/_isaac_sim/python.sh -m pip install nest_asyncio toml -q")
+if install_code != 0:
+    print(f"[WARNING] 패키지 설치 실패 (코드: {install_code}), 계속 진행...")
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v14로 업데이트 (패키지 설치 추가) |
+| `work_log.txt` | 세션 12 로그 추가 |
+
+### v13 → v14 변경점
+
+1. **패키지 설치 단계 추가**: `_isaac_sim/python.sh -m pip install nest_asyncio toml -q`
+2. **올바른 Python 환경 사용**: `/workspace/isaaclab/_isaac_sim/python.sh` (Isaac Sim Python)
+3. **단계별 출력**: `[1/2]`, `[2/2]`로 진행 상황 표시
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. Run -> Run All Cells
+```
+
+### 예상 출력
+
+```
+============================================================
+[v14] Data Generation - Standalone 전용
+============================================================
+[설정] 목표 생성 횟수: 1
+------------------------------------------------------------
+[1/2] 필수 패키지 설치 중...
+[2/2] standalone 스크립트 실행 중...
+(출력이 여기에 표시됩니다)
+------------------------------------------------------------
+============================================================
+[Standalone] Data Generation 시작 (v5 - nest_asyncio)
+============================================================
+...
+[완료]
+      총 시도: N회
+      성공: N, 실패: N
+============================================================
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+---
+
+## 세션 13: v15 - Python 환경 경로 수정
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v14 실행 시 여전히 `ModuleNotFoundError: No module named 'toml'` 에러 발생
+- pip 설치는 실행되었지만 (WARNING 메시지 출력됨) 패키지가 올바른 환경에 설치되지 않음
+
+### 원인 분석
+
+**v14에서 사용한 pip 설치 경로:**
+```bash
+/workspace/isaaclab/_isaac_sim/python.sh -m pip install nest_asyncio toml -q
+```
+
+**`launch.sh`에서 사용하는 올바른 경로:**
+```bash
+/isaac-sim/kit/python/bin/python3 -m pip install nest_asyncio toml -q
+```
+
+**문제**: 두 경로가 **다른 Python 환경**을 가리킴!
+- `/workspace/isaaclab/_isaac_sim/python.sh` - wrapper script (다른 환경에 설치)
+- `/isaac-sim/kit/python/bin/python3` - 실제 Isaac Sim Python 바이너리 (**올바른 환경**)
+
+### 컨테이너 내 Python 환경 구조
+
+```
+/isaac-sim/kit/python/bin/python3     ← 실제 Isaac Sim Python (패키지 설치 대상)
+/workspace/isaaclab/_isaac_sim/python.sh  ← 환경 설정 후 위 Python 실행하는 wrapper
+```
+
+### 해결 방법 (v15)
+
+**핵심 변경**: `launch.sh`와 **동일한 Python 경로** 사용
+
+```python
+# 필수 패키지 설치 (launch.sh와 동일한 Python 경로 사용!)
+install_code = os.system("/isaac-sim/kit/python/bin/python3 -m pip install nest_asyncio toml -q")
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v15로 업데이트 (올바른 Python 경로) |
+| `work_log.txt` | 세션 13 로그 추가 |
+
+### v14 → v15 변경점
+
+| 항목 | v14 (실패) | v15 (수정) |
+|------|-----------|-----------|
+| pip 설치 경로 | `/workspace/isaaclab/_isaac_sim/python.sh` | `/isaac-sim/kit/python/bin/python3` |
+| 참조 | 임의로 추측 | `launch.sh`와 동일 |
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. Run -> Run All Cells
+```
+
+### 예상 출력
+
+```
+============================================================
+[v15] Data Generation - Standalone 전용
+============================================================
+[설정] 목표 생성 횟수: 1
+------------------------------------------------------------
+[1/2] 필수 패키지 설치 중...
+[2/2] standalone 스크립트 실행 중...
+(출력이 여기에 표시됩니다)
+------------------------------------------------------------
+============================================================
+[Standalone] Data Generation 시작 (v5 - nest_asyncio)
+============================================================
+PyTorch: x.x.x
+...
+[완료]
+      총 시도: N회
+      성공: N, 실패: N
+============================================================
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+---
+
+## 세션 14: v16 - pip_overrides 디렉토리에 패키지 설치
+
+### 작업 일시
+2026-02-04
+
+### 문제 상황
+- v15 실행 시 여전히 `ModuleNotFoundError: No module named 'toml'` 에러 발생
+- pip 설치는 성공했지만, standalone 스크립트가 표준 site-packages를 찾지 못함
+
+### 근본 원인 분석
+
+**`generate_data_standalone.py`의 sys.path 조작:**
+```python
+# Line 14-17
+POD = "/workspace/isaaclab/pip_overrides"
+sys.path.insert(0, POD)  # pip_overrides를 최우선 경로로
+sys.path = [p for p in sys.path if "pip_prebundle" not in p]  # pip_prebundle 경로 제거
+```
+
+**문제:**
+1. 스크립트가 `pip_overrides`를 **최우선 경로**로 설정
+2. 표준 site-packages 경로가 **제거되거나 우선순위가 낮아짐**
+3. v15에서 `toml`은 표준 site-packages에 설치됨
+4. 스크립트의 sys.path 조작 때문에 **표준 site-packages를 찾지 못함**
+
+### 해결 방법 (v16)
+
+**핵심 변경**: `--target` 옵션으로 `pip_overrides` 디렉토리에 직접 설치
+
+```python
+install_code = os.system(
+    "/isaac-sim/kit/python/bin/python3 -m pip install "
+    "--target=/workspace/isaaclab/pip_overrides "
+    "nest_asyncio toml -q"
+)
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v16로 업데이트 (`--target` 옵션) |
+| `work_log.txt` | 세션 14 로그 추가 |
+
+### v15 → v16 변경점
+
+| 항목 | v15 (실패) | v16 (수정) |
+|------|-----------|-----------|
+| pip 설치 방식 | 표준 site-packages에 설치 | `--target=pip_overrides`로 설치 |
+| 설치 위치 | `/isaac-sim/.../site-packages/` | `/workspace/isaaclab/pip_overrides/` |
+| 스크립트와 일치 | X (sys.path 조작으로 못 찾음) | O (최우선 경로에서 찾음) |
+
+### v16에서 패키지가 찾아지는 과정
+1. Data Generation 셀: `pip install --target=pip_overrides toml`
+2. standalone 스크립트: `sys.path.insert(0, "/workspace/isaaclab/pip_overrides")`
+3. `import toml` → `pip_overrides/toml/` 에서 찾음 → 성공!
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. Run -> Run All Cells
+```
+
+### 예상 출력
+
+```
+============================================================
+[v16] Data Generation - Standalone 전용
+============================================================
+[설정] 목표 생성 횟수: 1
+------------------------------------------------------------
+[1/2] 필수 패키지 설치 중 (pip_overrides)...
+[2/2] standalone 스크립트 실행 중...
+(출력이 여기에 표시됩니다)
+------------------------------------------------------------
+============================================================
+[Standalone] Data Generation 시작 (v5 - nest_asyncio)
+============================================================
+PyTorch: x.x.x
+...
+[완료]
+      총 시도: N회
+      성공: N, 실패: N
+============================================================
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+---
+
+## 세션 15: v17 - 3가지 개선사항 (NUM_TRIALS, SUCCESS 메시지, 블로킹)
+
+### 작업 일시
+2026-02-04
+
+### 현재 상태
+v16에서 `toml` 모듈 문제 해결됨. 데이터 생성 성공 (1/1).
+
+### 3가지 개선사항
+
+#### 문제 1: NUM_TRIALS 환경 변수 미전달
+
+**현상**:
+- Data Generation 셀에서 `os.environ["NUM_TRIALS"]` 설정
+- 하지만 standalone 스크립트에서 `[설정] 목표 생성 횟수: 1` 출력 (기본값)
+
+**원인**:
+- `os.environ`은 현재 Python 프로세스의 환경 변수만 설정
+- `_isaac_sim/python.sh` wrapper가 환경 변수를 전달하지 않음
+
+**해결책**: 명령어에 환경 변수 직접 지정
+```python
+return_code = os.system(
+    f"cd /workspace/isaaclab && NUM_TRIALS={trials} "
+    f"./_isaac_sim/python.sh -u generate_data_standalone.py"
+)
+```
+
+#### 문제 2 & 3: SUCCESS 메시지 미출력 + 다음 셀 미진행
+
+**현상**:
+- standalone 스크립트 완료 후 `[SUCCESS]` 메시지 없음
+- "Video Preprocessing" 셀로 넘어가지 않음
+
+**원인**:
+- `simulation_app.close()` 블로킹
+- 출력에 `[완료] simulation_app 종료됨` 메시지 없음
+- `os.system()`이 반환되지 않음
+
+**해결책**: `simulation_app.close()` → `os._exit(0)` 변경
+```python
+# 정리 - 블로킹 방지를 위해 강제 종료
+print("\n[완료] 프로세스 종료 중...")
+sys.stdout.flush()
+
+os._exit(0)  # simulation_app.close() 대신 강제 종료
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | Data Generation 셀을 v17로 업데이트 (NUM_TRIALS 직접 전달) |
+| `notebook/generate_data_standalone.py` | `simulation_app.close()` → `os._exit(0)` 변경 |
+| `work_log.txt` | 세션 15 로그 추가 |
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. "Setup Initial Configuration" 셀에서 num_trials를 2 이상으로 설정
+4. Run -> Run All Cells
+```
+
+### 확인 사항
+1. **NUM_TRIALS 전달**: standalone 스크립트에서 `[설정] 목표 생성 횟수: N` (N = 설정한 값)
+2. **성공 메시지**: `[SUCCESS] 데이터 생성 완료!` 출력
+3. **다음 셀 진행**: "Video Preprocessing" 셀이 실행되어야 함
+
+### 예상 출력
+
+```
+============================================================
+[v17] Data Generation - Standalone 전용
+============================================================
+[설정] 목표 생성 횟수: 2
+------------------------------------------------------------
+[1/2] 필수 패키지 설치 중 (pip_overrides)...
+[2/2] standalone 스크립트 실행 중...
+(출력이 여기에 표시됩니다)
+------------------------------------------------------------
+...
+[설정] 목표 생성 횟수: 2
+...
+have 2 successes out of N trials so far
+...
+============================================================
+[완료]
+      총 시도: N회
+      성공: 2, 실패: M
+============================================================
+
+[완료] 프로세스 종료 중...
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+---
+
+## 세션 16: v18 - 출력 파일 구조 정리 (폴더 구조화)
+
+### 작업 일시
+2026-02-04
+
+### 현재 상태
+v17에서 Data Generation이 성공적으로 완료됨 (NUM_TRIALS=3, 12회 시도, 3회 성공).
+
+### 요청 사항
+출력 이미지를 체계적인 폴더 구조로 정리
+
+### 현재 구조 (flat)
+```
+output/
+├── table_cam_normals_trial_0_tile_0_step_0.png
+├── table_cam_normals_trial_0_tile_0_step_1.png
+├── ...
+└── table_high_cam_semantic_segmentation_trial_2_tile_0_step_1655.png
+```
+
+### 원하는 구조 (hierarchical)
+```
+output/
+├── table_cam_normals/
+│   ├── demo_0/
+│   │   ├── step_0000.png
+│   │   └── ...
+│   ├── demo_1/
+│   └── demo_2/
+├── table_cam_segmentation/
+├── table_high_cam_normals/
+└── table_high_cam_segmentation/
+```
+
+### 중요 발견
+Isaac Lab은 **성공한 trial의 이미지만 저장**합니다.
+- 파일명의 `trial_N`은 성공한 demo 번호와 일치
+- `trial_0` = `demo_0`, `trial_1` = `demo_1`, ...
+- 실패 trial 이미지는 처음부터 생성되지 않음
+
+### 해결 방법 (v18)
+Post-processing 방식으로 데이터 생성 완료 후 파일 재구성
+
+**`generate_data_standalone.py`에 추가한 함수:**
+```python
+def organize_output_files(output_dir):
+    """출력 이미지를 체계적인 폴더 구조로 정리"""
+    # 파일명 패턴 파싱
+    # trial 번호 = demo 번호로 사용
+    # 폴더 구조 생성 및 파일 이동
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_data_standalone.py` | `organize_output_files()` 함수 추가 (섹션 8) |
+| `work_log.txt` | 세션 16 로그 추가 |
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. "Setup Initial Configuration" 셀에서 num_trials 설정
+4. Run -> Run All Cells
+5. output/ 폴더 구조 확인
+```
+
+### 예상 출력
+
+```
+[후처리] 출력 파일 구조 정리 중...
+      -> 3개 demo, 1234개 파일 정리 완료
+
+[완료] 프로세스 종료 중...
+
+[SUCCESS] 데이터 생성 완료!
+```
+
+---
+
+## 세션 17: v19 - Video Preprocessing 호환성 개선
+
+### 작업 일시
+2026-02-04
+
+### 현재 상태
+v18에서 출력 파일이 계층적 폴더 구조로 정리됨 (4개 demo, 10736개 파일 정리 완료).
+
+### 문제 상황
+Video Preprocessing 셀 실행 시 `FileNotFoundError: '_isaaclab_out'` 오류 발생
+
+### 원인 분석
+
+#### 문제 1: 잘못된 경로 상수
+- 기존 코드: `ISAACLAB_OUTPUT_DIR = "_isaaclab_out"` (컨테이너 내부)
+- 실제 데이터 위치: `output/` (v18에서 정리된 계층 구조)
+
+#### 문제 2: 비디오 출력 접근성
+- `_isaaclab_out/`은 Docker 컨테이너 내부에만 존재
+- 로컬 PC에서 비디오 확인 불가
+
+#### 문제 3: 파일 구조 불일치
+- 기존 코드가 기대하는 구조: flat (e.g., `{camera}_normals_trial_0_tile_0_step_0.png`)
+- 실제 구조: hierarchical (e.g., `{camera}_normals/demo_0/step_0000.png`)
+
+### 해결 방법 (v19)
+
+#### 1. notebook_utils.py 경로 상수 변경
+```python
+# 변경 전
+ISAACLAB_OUTPUT_DIR = "_isaaclab_out"
+COSMOS_OUTPUT_DIR = "_cosmos_out"
+
+# 변경 후
+ISAACLAB_OUTPUT_DIR = "output"           # 이미지 입력 소스
+VIDEO_OUTPUT_DIR = "output/videos"       # 비디오 출력 (로컬 접근 가능!)
+COSMOS_OUTPUT_DIR = "output/cosmos"      # Cosmos 결과 (로컬 접근 가능!)
+```
+
+#### 2. get_env_trial_frames() 재작성
+새 계층 구조 스캔: `{camera}_segmentation/demo_{N}/step_{frame:04d}.png`
+
+#### 3. encode_video() 재작성
+새 경로 패턴 사용: `{camera}_{modality}/demo_{trial}/step_{frame:04d}.png`
+
+#### 4. create_camera_input() 재작성
+디렉토리 기반 카메라 목록 추출: `{camera}_normals` 폴더 찾기
+
+#### 5. 노트북 셀 업데이트
+- VIDEO_OUTPUT_DIR import 추가
+- 비디오 파일명 변경: `{camera}_demo_{trial}.mp4`
+- Cosmos 파라미터에서 VIDEO_OUTPUT_DIR 사용
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/notebook_utils.py` | 경로 상수 변경, get_env_trial_frames/encode_video 재작성 |
+| `notebook/notebook_widgets.py` | create_camera_input() 재작성 |
+| `notebook/generate_dataset.ipynb` | VIDEO_OUTPUT_DIR 사용, 비디오 출력 경로 변경 |
+| `work_log.txt` | 세션 17 로그 추가 |
+
+### 최종 폴더 구조
+
+```
+output/                              # 로컬 PC에 마운트됨
+├── table_cam_normals/               # 이미지 (v18)
+│   └── demo_0/
+├── table_cam_segmentation/          # 이미지 (v18)
+│   └── demo_0/
+├── table_high_cam_normals/          # 이미지 (v18)
+│   └── demo_0/
+├── table_high_cam_segmentation/     # 이미지 (v18)
+│   └── demo_0/
+├── videos/                          # 비디오 출력 (v19 신규)
+│   ├── table_cam_demo_0.mp4
+│   └── ...
+└── cosmos/                          # Cosmos 결과 (v19 신규)
+    └── ...
+```
+
+### 테스트 방법
+
+```
+1. Jupyter 접속 (http://localhost:8888)
+2. Kernel -> Restart Kernel and Clear Outputs
+3. Run -> Run All Cells
+4. Video Preprocessing 셀 실행 확인
+5. 로컬 PC에서 output/videos/ 폴더 확인
+```
+
+### 로컬에서 비디오 확인
+```bash
+# 프로젝트 루트에서
+ls -la output/videos/
+
+# 비디오 재생 (Ubuntu)
+vlc output/videos/table_cam_demo_0.mp4
+```
+
+### 핵심 개선점
+- 모든 결과물(이미지, 비디오, Cosmos)이 로컬 PC의 `output/` 폴더에서 바로 접근 가능
+- Docker compose 수정 없이 기존 볼륨 마운트 활용
+
+---
+
+## 세션 18: v20 - Video Encoding Standalone 스크립트
+
+### 작업 일시
+2026-02-04
+
+### 현재 상태
+v19에서 Video Preprocessing 코드 경로 수정 완료, 하지만 실행 시 에러 발생
+
+### 문제 상황
+Video Preprocessing 셀 실행 시 `ModuleNotFoundError: No module named 'video_encoding'` 에러 발생
+
+### 원인 분석
+
+#### Isaac Sim 전용 모듈
+```python
+from video_encoding import get_video_encoding_interface  # Isaac Sim 전용
+import warp as wp  # Isaac Sim/NVIDIA 전용 (GPU)
+```
+
+- `video_encoding`: Isaac Sim의 GPU 가속 비디오 인코딩 모듈
+- `warp`: NVIDIA의 GPU 병렬 처리 모듈 (Lambertian shading)
+
+#### SKIP_SIMULATION = True 모드의 한계
+- Isaac Sim이 시작되지 않음 → Isaac Sim 전용 모듈 사용 불가
+- Data Generation은 standalone 스크립트로 해결됨
+- Video Encoding도 동일한 방식 필요
+
+### 해결 방법 (v20)
+
+Data Generation과 동일한 패턴으로 `encode_video_standalone.py` 생성
+
+#### 아키텍처
+```
+[Jupyter Notebook]
+      │
+      ├── Data Generation 셀 → os.system() → generate_data_standalone.py
+      │                                              ↓
+      │                                       Isaac Sim 환경에서 실행
+      │
+      └── Video Encoding 셀 → os.system() → encode_video_standalone.py (신규)
+                                                   ↓
+                                            Isaac Sim 환경에서 실행
+```
+
+### 신규 파일: encode_video_standalone.py
+
+- Isaac Sim AppLauncher 초기화 (최소 설정, headless 모드)
+- `video_encoding` 모듈 임포트
+- `warp` GPU 커널로 Lambertian shading 적용
+- 환경 변수 `VIDEO_CONFIG`에서 카메라, 비디오 길이 설정 읽기
+- 모든 demo에 대해 비디오 인코딩
+- 결과를 `output/videos/`에 저장
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/encode_video_standalone.py` | **신규 생성** - 비디오 인코딩 standalone 스크립트 |
+| `notebook/generate_dataset.ipynb` | Video Preprocessing 셀을 v20 (os.system) 방식으로 수정 |
+| `docker-compose.yml` | encode_video_standalone.py 볼륨 마운트 추가 |
+| `work_log.txt` | 세션 18 로그 추가 |
+
+### 노트북 셀 변경 (v20)
+
+```python
+# v20: Video Encoding - Standalone 방식
+import os, sys, json
+from IPython.display import Video
+from notebook_utils import VIDEO_OUTPUT_DIR
+
+video_config = {
+    "camera": camera_selection.value,
+    "video_length": VIDEO_LENGTH
+}
+
+return_code = os.system(
+    f"cd /workspace/isaaclab && "
+    f"VIDEO_CONFIG='{json.dumps(video_config)}' "
+    f"./_isaac_sim/python.sh -u encode_video_standalone.py"
+)
+
+if return_code == 0:
+    # 생성된 비디오 표시
+    for f in sorted(os.listdir(VIDEO_OUTPUT_DIR)):
+        if f.startswith(camera) and f.endswith('.mp4'):
+            display(Video(os.path.join(VIDEO_OUTPUT_DIR, f), width=800))
+```
+
+### 테스트 방법
+
+```
+1. docker compose down && docker compose up -d  # 컨테이너 재시작 (볼륨 마운트 갱신)
+2. Jupyter 접속 (http://localhost:8888)
+3. Kernel -> Restart Kernel and Clear Outputs
+4. Run -> Run All Cells
+5. Video Preprocessing 셀 확인:
+   - "[SUCCESS] 비디오 인코딩 완료!" 메시지
+   - 비디오 플레이어 표시
+6. 로컬 PC에서 확인:
+   ls -la output/videos/
+   vlc output/videos/table_cam_demo_0.mp4
+```
+
+### 예상 출력
+
+```
+============================================================
+[v20] Video Encoding - Standalone 방식
+============================================================
+[설정] 카메라: table_cam
+[설정] 비디오 길이: 120 프레임
+------------------------------------------------------------
+standalone 스크립트 실행 중...
+------------------------------------------------------------
+============================================================
+[Standalone] Video Encoding 시작
+============================================================
+PyTorch: x.x.x
+[1/4] AppLauncher 시작 중...
+      -> AppLauncher 완료
+[2/4] 모듈 임포트 중...
+      -> 모듈 임포트 완료
+[3/4] 설정 로드 중...
+      카메라: table_cam
+      비디오 길이: 120 프레임
+      -> 설정 로드 완료
+[4/4] 비디오 인코딩 시작!
+------------------------------------------------------------
+[발견] 4개 demo: [0, 1, 2, 3]
+[인코딩] demo_0: 프레임 1536~1655
+      -> /workspace/isaaclab/output/videos/table_cam_demo_0.mp4
+...
+============================================================
+[완료]
+      생성된 비디오: 4개
+============================================================
+
+[완료] 프로세스 종료 중...
+
+[SUCCESS] 비디오 인코딩 완료!
+```
+
+---
 작성: Claude Code

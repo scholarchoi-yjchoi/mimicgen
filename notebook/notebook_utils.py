@@ -5,8 +5,9 @@ from PIL import Image
 
 
 # Set directories to use for inputs/outputs
-ISAACLAB_OUTPUT_DIR = "_isaaclab_out"
-COSMOS_OUTPUT_DIR = "_cosmos_out"
+ISAACLAB_OUTPUT_DIR = "output"           # 이미지 입력 소스 (v18 계층 구조)
+VIDEO_OUTPUT_DIR = "output/videos"       # 비디오 출력 (로컬 PC에서 접근 가능)
+COSMOS_OUTPUT_DIR = "output/cosmos"      # Cosmos 처리 결과 (로컬 접근 가능)
 
 # Video and rendering settings
 DEFAULT_FRAMERATE = 24.0
@@ -39,64 +40,76 @@ def _shade_segmentation(
     shading_out[i, j, 3] = wp.uint8(255)
 
 def get_env_trial_frames(root_dir: str, camera_name: str, min_frames: int = 30) -> dict:
-    """Get the last frame number for each trial for each environment in the dataset.
-    
+    """Get frame ranges for each demo from the hierarchical folder structure.
+
     Args:
-        root_dir: Directory containing the frames
-        camera_name: Name of the camera used
-        min_frames: Minimum number of frames required for a valid trial
-        
+        root_dir: Directory containing the camera folders (e.g., "output")
+        camera_name: Name of the camera (e.g., "table_cam")
+        min_frames: Minimum number of frames required for a valid demo
+
     Returns:
-        dict: Dictionary mapping trial numbers to (start_frame, end_frame) tuples
+        dict: {env_num: {demo_num: (start_frame, end_frame)}}
+              env_num is always 0 (single environment)
     """
     import re
-    
-    # Pattern to match trial and frame numbers
-    pattern = rf"{camera_name}_semantic_segmentation_trial_(\d+)_tile_(\d+)_step_(\d+).png"
-    
-    frames = {}
-    for filename in os.listdir(root_dir):
-        match = re.match(pattern, filename)
-        if match:
-            trial_num = int(match.group(1))
-            env_num = int(match.group(2))
-            frame_num = int(match.group(3))
-            
-            frames.setdefault(env_num, {}).setdefault(trial_num, []).append(frame_num)
-            
+
+    # 새 구조: {camera}_segmentation/demo_{N}/step_{frame:04d}.png
+    segmentation_dir = os.path.join(root_dir, f"{camera_name}_segmentation")
+
+    if not os.path.isdir(segmentation_dir):
+        return {}
+
     valid_trials = {}
-    for env_num, trial_nums in sorted(frames.items()):
-        for trial_num, frames in sorted(trial_nums.items()):
-            # Skip if not enough frames
-            if len(frames) < min_frames:
-                continue
-            
-            # Sort frames and get range
-            frames.sort()
-            start_frame = frames[0]
-            end_frame = frames[-1]
-            
-            # Verify frame sequence is continuous
-            expected_frames = set(range(start_frame, end_frame + 1))
-            actual_frames = set(frames)
-            if len(expected_frames - actual_frames) > 0:
-                continue
-                
-            valid_trials.setdefault(env_num, {}).setdefault(trial_num, (start_frame, end_frame))
-    
+
+    # demo_N 폴더들 스캔
+    for demo_folder in os.listdir(segmentation_dir):
+        match = re.match(r"demo_(\d+)", demo_folder)
+        if not match:
+            continue
+
+        demo_num = int(match.group(1))
+        demo_path = os.path.join(segmentation_dir, demo_folder)
+
+        if not os.path.isdir(demo_path):
+            continue
+
+        # step_{frame:04d}.png 파일들 스캔
+        frames = []
+        for filename in os.listdir(demo_path):
+            step_match = re.match(r"step_(\d+)\.png", filename)
+            if step_match:
+                frames.append(int(step_match.group(1)))
+
+        if len(frames) < min_frames:
+            continue
+
+        frames.sort()
+        start_frame = frames[0]
+        end_frame = frames[-1]
+
+        # 연속성 검증
+        expected = set(range(start_frame, end_frame + 1))
+        if len(expected - set(frames)) > 0:
+            continue
+
+        # env_num = 0 (단일 환경)
+        valid_trials.setdefault(0, {})[demo_num] = (start_frame, end_frame)
+
     return valid_trials
 
 def encode_video(root_dir: str, start_frame: int, num_frames: int, camera_name: str, output_path: str, env_num: int, trial_num: int) -> None:
     """Encode a sequence of shaded segmentation frames into a video.
 
+    새 구조: {root_dir}/{camera}_{modality}/demo_{trial}/step_{frame:04d}.png
+
     Args:
-        root_dir: Directory containing the input frames
+        root_dir: Directory containing the camera folders (e.g., "output")
         start_frame: Starting frame index
         num_frames: Number of frames to encode
-        camera_name: Name of the camera (used in filename pattern)
+        camera_name: Name of the camera (e.g., "table_cam")
         output_path: Output path for the encoded video
-        env_num: Environment number for the sequence
-        trial_num: Trial number for the sequence
+        env_num: Environment number (unused, kept for compatibility)
+        trial_num: Demo number for the sequence
 
     Raises:
         ValueError: If start_frame is negative or if any required frame is missing
@@ -108,24 +121,29 @@ def encode_video(root_dir: str, start_frame: int, num_frames: int, camera_name: 
     if num_frames <= 0:
         raise ValueError("num_frames must be positive")
 
-    frame_name_pattern = "{camera_name}_{modality}_trial_{trial_num}_tile_{env_num}_step_{frame_idx}.png"
+    # 새 경로 함수
+    def get_frame_path(modality: str, frame_idx: int) -> str:
+        return os.path.join(
+            root_dir,
+            f"{camera_name}_{modality}",
+            f"demo_{trial_num}",
+            f"step_{frame_idx:04d}.png"
+        )
 
-    # Validate all frames exist before starting
+    # 모든 프레임 존재 확인
     for frame_idx in range(start_frame, start_frame + num_frames):
-        file_path_normals = os.path.join(root_dir, frame_name_pattern.format(camera_name=camera_name, modality="normals", trial_num=trial_num, env_num=env_num, frame_idx=frame_idx))
-        file_path_segmentation = os.path.join(root_dir, frame_name_pattern.format(camera_name=camera_name, modality="semantic_segmentation", trial_num=trial_num, env_num=env_num, frame_idx=frame_idx))
-        if not os.path.exists(file_path_normals) or not os.path.exists(file_path_segmentation):
-            raise ValueError(f"Missing frame at frame index {frame_idx} for trial {trial_num}")
+        normals_path = get_frame_path("normals", frame_idx)
+        segmentation_path = get_frame_path("segmentation", frame_idx)
+        if not os.path.exists(normals_path) or not os.path.exists(segmentation_path):
+            raise ValueError(f"Missing frame at frame index {frame_idx} for demo {trial_num}")
 
-    # Initialize video encoding
+    # 비디오 인코딩 초기화
     video_encoding = get_video_encoding_interface()
-    
-    # Get dimensions from first frame
-    first_frame = np.array(Image.open(os.path.join(
-        root_dir, frame_name_pattern.format(camera_name=camera_name, modality="semantic_segmentation", trial_num=trial_num, env_num=env_num, frame_idx=start_frame))))
+
+    first_frame = np.array(Image.open(get_frame_path("segmentation", start_frame)))
     height, width = first_frame.shape[:2]
-    
-    # Pre-allocate buffers
+
+    # 버퍼 할당
     normals_wp = wp.empty((height, width, 3), dtype=wp.float32, device="cuda")
     segmentation_wp = wp.empty((height, width, 4), dtype=wp.uint8, device="cuda")
     shaded_segmentation_wp = wp.empty_like(segmentation_wp)
@@ -139,18 +157,14 @@ def encode_video(root_dir: str, start_frame: int, num_frames: int, camera_name: 
     )
 
     for frame_idx in range(start_frame, start_frame + num_frames):
-        file_path_normals = os.path.join(root_dir, frame_name_pattern.format(camera_name=camera_name, modality="normals", trial_num=trial_num, env_num=env_num, frame_idx=frame_idx))
-        file_path_segmentation = os.path.join(root_dir, frame_name_pattern.format(camera_name=camera_name, modality="semantic_segmentation", trial_num=trial_num, env_num=env_num, frame_idx=frame_idx))
-        
-        # Load and copy data to existing buffers
-        normals_np = np.array(Image.open(file_path_normals)).astype(np.float32) / 255.0
+        normals_np = np.array(Image.open(get_frame_path("normals", frame_idx))).astype(np.float32) / 255.0
         wp.copy(normals_wp, wp.from_numpy(normals_np))
-        
-        segmentation_np = np.array(Image.open(file_path_segmentation))
+
+        segmentation_np = np.array(Image.open(get_frame_path("segmentation", frame_idx)))
         wp.copy(segmentation_wp, wp.from_numpy(segmentation_np))
-    
-        # Launch kernel
-        wp.launch(_shade_segmentation, dim=(height, width), inputs=[segmentation_wp, normals_wp, shaded_segmentation_wp, light_source])
-        
-        # Encode frame
-        video_encoding.encode_next_frame_from_buffer(shaded_segmentation_wp.numpy().tobytes(), width=width, height=height)
+
+        wp.launch(_shade_segmentation, dim=(height, width),
+                  inputs=[segmentation_wp, normals_wp, shaded_segmentation_wp, light_source])
+
+        video_encoding.encode_next_frame_from_buffer(
+            shaded_segmentation_wp.numpy().tobytes(), width=width, height=height)

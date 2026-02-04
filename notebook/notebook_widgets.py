@@ -190,11 +190,23 @@ def create_download_link(file_path: str, link_text: str = "Download File") -> wi
 
 
 def create_camera_input(root_dir: str) -> widgets.Dropdown:
-    """Create a dropdown for video source selection."""
-    files = os.listdir(root_dir)
-    valid_files = {f.split("_normals_")[0] for f in files if "_normals_" in f}
+    """Create a dropdown for video source selection.
 
-    available_cameras = list(valid_files)
+    새 구조에서 {camera}_normals 디렉토리를 찾아 카메라 목록 추출
+    """
+    available_cameras = []
+
+    for entry in os.listdir(root_dir):
+        entry_path = os.path.join(root_dir, entry)
+        # {camera}_normals 패턴의 디렉토리 찾기
+        if os.path.isdir(entry_path) and entry.endswith("_normals"):
+            camera_name = entry.rsplit("_normals", 1)[0]
+            available_cameras.append(camera_name)
+
+    available_cameras.sort()
+
+    if not available_cameras:
+        raise FileNotFoundError(f"No camera directories found in {root_dir}")
 
     camera_widget = widgets.Dropdown(
         options=available_cameras,
