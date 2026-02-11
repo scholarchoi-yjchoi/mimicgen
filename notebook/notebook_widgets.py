@@ -89,13 +89,14 @@ def create_cosmos_params(output_dir: str) -> Dict[str, widgets.Widget]:
         FileNotFoundError: If output_dir doesn't exist or contains no MP4 files.
     """
     inputs = sorted([f for f in os.listdir(output_dir) if f.endswith(".mp4")])
-    input_video = widgets.Dropdown(
+    input_video = widgets.SelectMultiple(
         options=inputs,
-        value=inputs[0],
-        description="Input Video:",
+        value=tuple(inputs),  # 모든 비디오 기본 선택
+        description="Input Videos:",
         disabled=False,
-        style={"description_width": "initial"},  # This allows description to use natural width
-        layout=widgets.Layout(width="500px"),
+        style={"description_width": "initial"},
+        layout=widgets.Layout(width="500px", height="100px"),
+        rows=min(len(inputs), 5),
     )
 
     seed = widgets.IntText(
@@ -189,10 +190,14 @@ def create_download_link(file_path: str, link_text: str = "Download File") -> wi
     )
 
 
-def create_camera_input(root_dir: str) -> widgets.Dropdown:
-    """Create a dropdown for video source selection.
+def create_camera_input(root_dir: str) -> widgets.SelectMultiple:
+    """Create a multi-select widget for video source selection.
 
     새 구조에서 {camera}_normals 디렉토리를 찾아 카메라 목록 추출
+    기본값으로 모든 카메라가 선택됨.
+
+    Returns:
+        widgets.SelectMultiple: 선택된 카메라들은 widget.value로 접근 (tuple 반환)
     """
     available_cameras = []
 
@@ -208,15 +213,16 @@ def create_camera_input(root_dir: str) -> widgets.Dropdown:
     if not available_cameras:
         raise FileNotFoundError(f"No camera directories found in {root_dir}")
 
-    camera_widget = widgets.Dropdown(
+    camera_widget = widgets.SelectMultiple(
         options=available_cameras,
-        value=available_cameras[0],
-        description="Source Camera:",
+        value=tuple(available_cameras),  # 모든 카메라 기본 선택
+        description="Cameras:",
         style={"description_width": "initial"},
-        layout={"width": "auto"},
+        layout={"width": "300px", "height": "80px"},
+        rows=min(len(available_cameras), 5),
     )
 
-    display(widgets.HTML("<h3>1. Select Camera</h3>"))
+    display(widgets.HTML("<h3>1. Select Cameras (Ctrl+Click to multi-select)</h3>"))
     display(camera_widget)
     return camera_widget
 

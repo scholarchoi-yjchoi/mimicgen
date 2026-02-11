@@ -1792,4 +1792,288 @@ libreoffice Isaac_Lab_MimicGen_Technical_Report_v3.docx
 | `work_log.txt` | - | 모든 세션 작업 로그 |
 
 ---
+
+## 세션 20: v21 - 멀티 카메라 Video Encoding UI
+
+### 작업 일시
+2026-02-11
+
+### 문제 상황
+- `output/` 폴더에 `table_cam`과 `table_high_cam` 두 카메라의 이미지가 모두 있음
+- `output/videos/` 폴더에는 `table_cam` 비디오만 존재
+- 원인: `create_camera_input()`이 `Dropdown` 위젯을 사용하여 단일 카메라만 선택 가능
+- 알파벳 순 첫 번째(`table_cam`)가 기본값으로 설정됨
+
+### 해결 방법 (v21)
+
+#### 핵심 변경
+- `Dropdown` → `SelectMultiple` 위젯으로 변경
+- 기본값: 모든 카메라 선택됨
+- 선택된 카메라들에 대해 순차적으로 비디오 인코딩
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/notebook_widgets.py` | `create_camera_input()` 반환 타입 변경: `Dropdown` → `SelectMultiple` |
+| `notebook/generate_dataset.ipynb` | Video Encoding 셀을 v21로 업데이트 (멀티 카메라 루프) |
+
+### 코드 변경 상세
+
+#### notebook_widgets.py
+
+```python
+# 변경 전
+def create_camera_input(root_dir: str) -> widgets.Dropdown:
+    camera_widget = widgets.Dropdown(
+        options=available_cameras,
+        value=available_cameras[0],  # 첫 번째만 선택
+        description="Source Camera:",
+        ...
+    )
+
+# 변경 후
+def create_camera_input(root_dir: str) -> widgets.SelectMultiple:
+    camera_widget = widgets.SelectMultiple(
+        options=available_cameras,
+        value=tuple(available_cameras),  # 모든 카메라 기본 선택
+        description="Cameras:",
+        rows=min(len(available_cameras), 5),
+        ...
+    )
+```
+
+#### generate_dataset.ipynb (Video Encoding 셀)
+
+```python
+# v21: Multi-Camera Support
+selected_cameras = camera_selection.value  # tuple 반환
+
+for idx, camera in enumerate(selected_cameras, 1):
+    print(f"[{idx}/{total}] {camera} 인코딩 중...")
+    video_config = {"camera": camera, "video_length": VIDEO_LENGTH}
+    os.system(f"VIDEO_CONFIG='{json.dumps(video_config)}' ...")
+```
+
+### 예상 결과
+
+**수정 전:**
+```
+output/videos/
+├── table_cam_demo_0.mp4
+├── table_cam_demo_1.mp4
+└── table_cam_demo_2.mp4
+```
+
+**수정 후:**
+```
+output/videos/
+├── table_cam_demo_0.mp4
+├── table_cam_demo_1.mp4
+├── table_cam_demo_2.mp4
+├── table_high_cam_demo_0.mp4
+├── table_high_cam_demo_1.mp4
+└── table_high_cam_demo_2.mp4
+```
+
+### 테스트 방법
+
+```
+1. Docker 컨테이너 재시작: docker compose down && docker compose up -d
+2. Jupyter 접속 (http://localhost:8888)
+3. Kernel -> Restart Kernel and Clear Outputs
+4. Video Preprocessing 셀 실행 → SelectMultiple 위젯에 모든 카메라 선택됨 확인
+5. Video Encoding 셀 실행 → [1/2], [2/2] 진행 출력 확인
+6. output/videos/ 폴더에서 두 카메라 비디오 모두 생성됨 확인
+```
+
+### 핵심 개선점
+
+1. **UI 개선**: 체크박스 스타일로 원하는 카메라들 선택 가능
+2. **기본값 변경**: 모든 카메라 자동 선택 (수동 선택 불필요)
+3. **진행 상황 표시**: `[1/2] table_cam 인코딩 중...` 형태로 출력
+4. **일괄 처리**: 한 번의 셀 실행으로 모든 카메라 비디오 생성
+
+---
+
+## 세션 21: v22 - Cosmos 멀티 비디오 처리 UI
+
+### 작업 일시
+2026-02-11
+
+### 문제 상황
+- Cosmos Parameters의 `Input Video`가 `Dropdown` 위젯 → 단일 비디오만 선택 가능
+- 여러 비디오에 동일한 prompt/파라미터를 적용하려면 셀을 반복 실행해야 함
+
+### 해결 방법 (v22)
+
+#### 핵심 변경
+- `Dropdown` → `SelectMultiple` 위젯으로 변경
+- 기본값: 모든 비디오 선택됨
+- 선택된 비디오들에 대해 순차적으로 Cosmos 처리
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/notebook_widgets.py` | `create_cosmos_params()`의 `input_video`: `Dropdown` → `SelectMultiple` |
+| `notebook/generate_dataset.ipynb` | "Generate with Cosmos" 셀을 v22로 업데이트 (멀티 비디오 루프) |
+
+### 코드 변경 상세
+
+#### notebook_widgets.py
+
+```python
+# 변경 전
+input_video = widgets.Dropdown(
+    options=inputs,
+    value=inputs[0],  # 첫 번째만 선택
+    description="Input Video:",
+    ...
+)
+
+# 변경 후
+input_video = widgets.SelectMultiple(
+    options=inputs,
+    value=tuple(inputs),  # 모든 비디오 기본 선택
+    description="Input Videos:",
+    rows=min(len(inputs), 5),
+    ...
+)
+```
+
+#### generate_dataset.ipynb (Generate with Cosmos 셀)
+
+```python
+# v22: Multi-Video Cosmos Processing
+selected_videos = params.pop("input_video")  # tuple 반환
+
+for idx, video_name in enumerate(selected_videos, 1):
+    print(f"[{idx}/{total}] {video_name} 처리 중... (5~10분 소요)")
+
+    video_filepath = os.path.join(VIDEO_OUTPUT_DIR, video_name)
+    output_path = os.path.join(COSMOS_OUTPUT_DIR, f"cosmos_{base_name}_{params['seed']}.mp4")
+
+    response = process_video(url=COSMOS_URL, video_path=video_filepath, ...)
+```
+
+### 예상 결과
+
+**수정 전:**
+```
+output/cosmos/
+└── cosmos_42.mp4  (하나만)
+```
+
+**수정 후:**
+```
+output/cosmos/
+├── cosmos_table_cam_demo_0_42.mp4
+├── cosmos_table_cam_demo_1_42.mp4
+├── cosmos_table_cam_demo_2_42.mp4
+├── cosmos_table_high_cam_demo_0_42.mp4
+├── cosmos_table_high_cam_demo_1_42.mp4
+└── cosmos_table_high_cam_demo_2_42.mp4
+```
+
+### 처리 시간 참고
+- Cosmos 처리: 5~10분/비디오 (H100 GPU)
+- 6개 비디오 선택 시: 30~60분 예상
+
+### 테스트 방법
+
+```
+1. Docker 컨테이너 재시작: docker compose down && docker compose up -d
+2. Jupyter 접속 (http://localhost:8888)
+3. Kernel -> Restart Kernel and Clear Outputs
+4. Cosmos Parameters 셀 실행 → SelectMultiple에 모든 비디오 선택됨 확인
+5. Generate with Cosmos 셀 실행 → [1/N], [2/N] 진행 출력 확인
+6. output/cosmos/ 폴더에서 모든 비디오 생성됨 확인
+```
+
+### 핵심 개선점
+
+1. **UI 개선**: 멀티셀렉트로 원하는 비디오들 선택 가능
+2. **기본값 변경**: 모든 비디오 자동 선택 (수동 선택 불필요)
+3. **진행 상황 표시**: `[1/6] table_cam_demo_0.mp4 처리 중...` 형태로 출력
+4. **일괄 처리**: 한 번의 셀 실행으로 모든 비디오 Cosmos 변환
+
+---
+
+## 세션 22: v23 - 노트북 실행 시간 측정 기능
+
+### 작업 일시
+2026-02-11
+
+### 요청 사항
+- 노트북 전체 실행 시간 측정
+- 주요 셀(Data Gen, Video Encoding, Cosmos) 단위 시간 측정
+- 실행 완료 시 요약 출력
+
+### 해결 방법
+
+#### 수정된 셀 (4개)
+
+| 셀 | Cell ID | 추가 내용 |
+|----|---------|----------|
+| Setup (첫 번째) | `71d91d6e` | `NOTEBOOK_START_TIME`, `TIMING_LOG` 초기화 |
+| Data Generation | `035cd632-...` | `_data_gen_start` 측정 → `TIMING_LOG['data_generation']` |
+| Video Encoding | `3d446c26-...` | `_video_enc_start` 측정 → `TIMING_LOG['video_encoding']` |
+| Cosmos (마지막) | `ff80ae7d-...` | `_cosmos_start` 측정 + 전체 요약 출력 |
+
+### 예상 출력
+
+```
+============================================================
+[NOTEBOOK START] 2026-02-11 14:30:00
+============================================================
+
+... (각 셀 실행) ...
+
+[TIMING] Data Generation: 15.23 minutes
+
+... (각 셀 실행) ...
+
+[TIMING] Video Encoding: 8.45 minutes
+
+... (각 셀 실행) ...
+
+============================================================
+[NOTEBOOK COMPLETE] Execution Time Summary
+============================================================
+Start Time:        2026-02-11 14:30:00
+End Time:          2026-02-11 15:45:23
+------------------------------------------------------------
+  data_generation     :  15.23 minutes
+  video_encoding      :   8.45 minutes
+  cosmos_processing   :  51.67 minutes
+------------------------------------------------------------
+  TOTAL               :  75.35 minutes (4521.0 seconds)
+============================================================
+```
+
+### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/generate_dataset.ipynb` | 4개 셀에 시간 측정 코드 추가 |
+
+### 테스트 방법
+
+```
+1. Docker 컨테이너 재시작: docker compose down && docker compose up -d
+2. Jupyter 접속 (http://localhost:8888)
+3. Kernel -> Restart Kernel and Clear Outputs
+4. Run -> Run All Cells
+5. 마지막 셀 출력에서 시간 요약 확인
+```
+
+### 핵심 개선점
+
+1. **전체 실행 시간**: 노트북 시작~종료까지 총 시간 측정
+2. **단계별 시간**: Data Gen, Video Encoding, Cosmos 각각의 소요 시간
+3. **요약 출력**: 마지막에 깔끔한 테이블 형태로 출력
+4. **시작/종료 시각**: 언제 시작해서 언제 끝났는지 기록
+
+---
 작성: Claude Code
