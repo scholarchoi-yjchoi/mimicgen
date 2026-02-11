@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isaac Lab MimicGen - Synthetic Motion Data Generation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --nvidia-green: #76b900;
+            --nvidia-dark: #1a1a2e;
+            --nvidia-darker: #0f0f1a;
+            --accent-blue: #00d4ff;
+            --accent-purple: #a855f7;
+            --accent-orange: #f97316;
+            --success-green: #22c55e;
+            --error-red: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--nvidia-darker);
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        /* Hero Section */
+        .hero {
+            height: 100vh;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        #hero-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .hero h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            animation: fadeInUp 1s ease;
+        }
+
+        .hero .subtitle {
+            font-size: 1.5rem;
+            color: #888;
+            margin-bottom: 2rem;
+            animation: fadeInUp 1s ease 0.2s both;
+        }
+
+        .hero .badges {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 1s ease 0.4s both;
+        }
+
+        .badge {
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .badge.nvidia { background: linear-gradient(135deg, var(--nvidia-green), #5a9100); }
+        .badge.isaac { background: linear-gradient(135deg, var(--accent-blue), #0099cc); }
+        .badge.cosmos { background: linear-gradient(135deg, var(--accent-purple), #7c3aed); }
+
+        /* Scroll Indicator */
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            animation: bounce 2s infinite;
+        }
+
+        .scroll-indicator::before {
+            content: '';
+            display: block;
+            width: 30px;
+            height: 50px;
+            border: 2px solid var(--nvidia-green);
+            border-radius: 15px;
+            position: relative;
+        }
+
+        .scroll-indicator::after {
+            content: '';
+            display: block;
+            width: 6px;
+            height: 10px;
+            background: var(--nvidia-green);
+            border-radius: 3px;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: scrollDot 2s infinite;
+        }
+
+        /* Section Styles */
+        section {
+            padding: 6rem 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 4rem;
+            font-size: 1.2rem;
+        }
+
+        /* Pipeline Section */
+        .pipeline {
+            background: linear-gradient(180deg, var(--nvidia-darker), var(--nvidia-dark));
+        }
+
+        .pipeline-stages {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .stage-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 2rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stage-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--nvidia-green), var(--accent-blue));
+        }
+
+        .stage-card:hover {
+            transform: translateY(-10px);
+            border-color: var(--nvidia-green);
+            box-shadow: 0 20px 40px rgba(118, 185, 0, 0.2);
+        }
+
+        .stage-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-blue));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+        }
+
+        .stage-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: var(--nvidia-green);
+        }
+
+        .stage-card p {
+            color: #aaa;
+            line-height: 1.6;
+        }
+
+        .stage-tech {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .tech-tag {
+            background: rgba(118, 185, 0, 0.2);
+            color: var(--nvidia-green);
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        /* Problem Section */
+        .problem {
+            background: var(--nvidia-dark);
+        }
+
+        .problem-viz {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 2rem;
+            align-items: center;
+            margin-top: 3rem;
+        }
+
+        .problem-box {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 2rem;
+            text-align: center;
+            border: 2px solid rgba(255,255,255,0.1);
+            position: relative;
+        }
+
+        .problem-box.jupyter {
+            border-color: var(--accent-orange);
+        }
+
+        .problem-box.isaac {
+            border-color: var(--nvidia-green);
+        }
+
+        .problem-box h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .problem-box.jupyter h3 { color: var(--accent-orange); }
+        .problem-box.isaac h3 { color: var(--nvidia-green); }
+
+        .conflict-icon {
+            font-size: 4rem;
+            color: var(--error-red);
+            animation: pulse 1s infinite;
+        }
+
+        .problem-code {
+            background: #0a0a15;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            text-align: left;
+            color: #aaa;
+        }
+
+        /* Journey Timeline */
+        .journey {
+            background: linear-gradient(180deg, var(--nvidia-dark), var(--nvidia-darker));
+        }
+
+        .timeline {
+            position: relative;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--error-red), var(--accent-orange), var(--nvidia-green));
+            border-radius: 2px;
+        }
+
+        .timeline-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 3rem;
+        }
+
+        .timeline-item:nth-child(odd) {
+            flex-direction: row-reverse;
+        }
+
+        .timeline-content {
+            width: 45%;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .timeline-content:hover {
+            transform: scale(1.02);
+            border-color: var(--nvidia-green);
+        }
+
+        .timeline-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--nvidia-green);
+            border: 4px solid var(--nvidia-darker);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1;
+        }
+
+        .timeline-item.failed .timeline-dot {
+            background: var(--error-red);
+        }
+
+        .timeline-item.success .timeline-dot {
+            background: var(--success-green);
+            box-shadow: 0 0 20px var(--success-green);
+        }
+
+        .timeline-version {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--nvidia-green);
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-item.failed .timeline-version {
+            color: var(--error-red);
+        }
+
+        .timeline-item.success .timeline-version {
+            color: var(--success-green);
+        }
+
+        /* Sessions Section */
+        .sessions {
+            background: var(--nvidia-darker);
+        }
+
+        .session-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .session-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 15px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .session-card:hover {
+            border-color: var(--nvidia-green);
+            transform: translateY(-5px);
+        }
+
+        .session-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .session-num {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-blue));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .session-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .session-date {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .session-desc {
+            color: #888;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* Architecture Section */
+        .architecture {
+            background: var(--nvidia-dark);
+        }
+
+        .arch-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .arch-layer {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .arch-box {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            min-width: 200px;
+            transition: all 0.3s ease;
+        }
+
+        .arch-box:hover {
+            border-color: var(--nvidia-green);
+            transform: scale(1.05);
+        }
+
+        .arch-box.jupyter { border-color: var(--accent-orange); }
+        .arch-box.standalone { border-color: var(--nvidia-green); }
+        .arch-box.cosmos { border-color: var(--accent-purple); }
+
+        .arch-box h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .arch-box.jupyter h4 { color: var(--accent-orange); }
+        .arch-box.standalone h4 { color: var(--nvidia-green); }
+        .arch-box.cosmos h4 { color: var(--accent-purple); }
+
+        .arch-arrow {
+            font-size: 2rem;
+            color: var(--nvidia-green);
+            text-align: center;
+        }
+
+        /* Results Section */
+        .results {
+            background: linear-gradient(180deg, var(--nvidia-darker), var(--nvidia-dark));
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .result-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 2rem;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .result-card:hover {
+            border-color: var(--nvidia-green);
+            transform: scale(1.05);
+        }
+
+        .result-value {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .result-label {
+            color: #888;
+            font-size: 1rem;
+        }
+
+        /* Output Structure */
+        .output-structure {
+            background: var(--nvidia-darker);
+        }
+
+        .folder-tree {
+            background: #0a0a15;
+            border-radius: 15px;
+            padding: 2rem;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            max-width: 600px;
+            margin: 0 auto;
+            border: 1px solid rgba(118, 185, 0, 0.3);
+        }
+
+        .folder { color: var(--accent-blue); }
+        .file { color: #aaa; }
+        .file.hdf5 { color: var(--accent-purple); }
+        .file.mp4 { color: var(--nvidia-green); }
+        .file.png { color: var(--accent-orange); }
+
+        /* Footer */
+        footer {
+            background: #0a0a15;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: #666;
+        }
+
+        footer a {
+            color: var(--nvidia-green);
+            text-decoration: none;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateX(-50%) translateY(0); }
+            40% { transform: translateX(-50%) translateY(-10px); }
+            60% { transform: translateX(-50%) translateY(-5px); }
+        }
+
+        @keyframes scrollDot {
+            0% { opacity: 1; top: 10px; }
+            100% { opacity: 0; top: 30px; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.5rem; }
+            .hero .subtitle { font-size: 1rem; }
+            .section-title { font-size: 2rem; }
+            .problem-viz { grid-template-columns: 1fr; }
+            .timeline::before { left: 20px; }
+            .timeline-item { flex-direction: column !important; }
+            .timeline-content { width: 85%; margin-left: 50px; }
+            .timeline-dot { left: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <canvas id="hero-canvas"></canvas>
+        <div class="hero-content">
+            <h1>Isaac Lab MimicGen</h1>
+            <p class="subtitle">Synthetic Manipulation Motion Data Generation Pipeline</p>
+            <div class="badges">
+                <span class="badge nvidia">NVIDIA Omniverse</span>
+                <span class="badge isaac">Isaac Lab</span>
+                <span class="badge cosmos">Cosmos AI</span>
+            </div>
+        </div>
+        <div class="scroll-indicator"></div>
+    </section>
+
+    <!-- Pipeline Section -->
+    <section class="pipeline">
+        <h2 class="section-title fade-in">3-Stage Pipeline</h2>
+        <p class="section-subtitle fade-in">From human demonstration to diverse training dataset</p>
+
+        <div class="pipeline-stages">
+            <div class="stage-card fade-in">
+                <div class="stage-number">1</div>
+                <h3>Isaac Lab Simulation</h3>
+                <p>Generate robot motion trajectories with semantic segmentation and surface normals using GPU-accelerated physics simulation.</p>
+                <div class="stage-tech">
+                    <span class="tech-tag">Franka Robot</span>
+                    <span class="tech-tag">Cube Stacking</span>
+                    <span class="tech-tag">HDF5 Output</span>
+                </div>
+            </div>
+
+            <div class="stage-card fade-in">
+                <div class="stage-number">2</div>
+                <h3>GPU Video Encoding</h3>
+                <p>Apply Lambertian shading using Warp CUDA kernels and encode high-quality MP4 videos with hardware acceleration.</p>
+                <div class="stage-tech">
+                    <span class="tech-tag">Warp Kernels</span>
+                    <span class="tech-tag">CUDA</span>
+                    <span class="tech-tag">MP4 Encoding</span>
+                </div>
+            </div>
+
+            <div class="stage-card fade-in">
+                <div class="stage-number">3</div>
+                <h3>Cosmos Transformation</h3>
+                <p>Generate diverse visual variations using NVIDIA Cosmos AI for robust imitation learning dataset creation.</p>
+                <div class="stage-tech">
+                    <span class="tech-tag">H100 GPU</span>
+                    <span class="tech-tag">Transfer1</span>
+                    <span class="tech-tag">Visual Diversity</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section class="problem">
+        <h2 class="section-title fade-in">The Core Challenge</h2>
+        <p class="section-subtitle fade-in">AsyncIO Event Loop Conflict</p>
+
+        <div class="problem-viz fade-in">
+            <div class="problem-box jupyter">
+                <h3>Jupyter Notebook</h3>
+                <p>IPython Event Loop</p>
+                <div class="problem-code">
+                    asyncio.get_event_loop()<br>
+                    nest_asyncio.apply()
+                </div>
+            </div>
+
+            <div class="conflict-icon">X</div>
+
+            <div class="problem-box isaac">
+                <h3>Isaac Sim (Kit)</h3>
+                <p>Omniverse Event Loop</p>
+                <div class="problem-code">
+                    omni.kit.async_engine<br>
+                    assert events._get_running_loop() is self
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 3rem; color: #888;" class="fade-in">
+            <p style="font-size: 1.2rem;">Two independent asyncio loops cannot coexist</p>
+            <p style="margin-top: 1rem;">Data Generation cell blocks infinitely with no output</p>
+        </div>
+    </section>
+
+    <!-- Journey Timeline -->
+    <section class="journey">
+        <h2 class="section-title fade-in">Development Journey</h2>
+        <p class="section-subtitle fade-in">v1 to v23: From failure to success</p>
+
+        <div class="timeline">
+            <div class="timeline-item failed fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v1-v4: Direct AsyncIO</div>
+                    <p>Attempted to use asyncio directly with Kit's event loop. All approaches failed with AssertionError.</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+
+            <div class="timeline-item success fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v5: nest_asyncio + Official API</div>
+                    <p>Used nest_asyncio.apply() with Isaac Lab's official setup_async_generation() and env_loop(). First success!</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+
+            <div class="timeline-item failed fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v9-v12: subprocess Methods</div>
+                    <p>Tried subprocess.Popen, IPython !, os.system. Output appeared in wrong cell due to Isaac Sim stdout hijacking.</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+
+            <div class="timeline-item success fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v13-v17: SKIP_SIMULATION</div>
+                    <p>Don't start Isaac Sim in Jupyter. Run standalone script via os.system(). Output displays correctly!</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+
+            <div class="timeline-item success fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v18-v20: File Structure & Video</div>
+                    <p>Reorganized output to hierarchical folders. Created encode_video_standalone.py for GPU video encoding.</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+
+            <div class="timeline-item success fade-in">
+                <div class="timeline-content">
+                    <div class="timeline-version">v21-v23: Multi-Select UI & Timing</div>
+                    <p>SelectMultiple widgets for batch processing. Added notebook execution time measurement.</p>
+                </div>
+                <div class="timeline-dot"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="architecture">
+        <h2 class="section-title fade-in">Final Architecture</h2>
+        <p class="section-subtitle fade-in">Standalone script pattern for Isaac Sim integration</p>
+
+        <div class="arch-diagram fade-in">
+            <div class="arch-layer">
+                <div class="arch-box jupyter">
+                    <h4>Jupyter Notebook</h4>
+                    <p>UI & Orchestration</p>
+                </div>
+            </div>
+
+            <div class="arch-arrow">os.system()</div>
+
+            <div class="arch-layer">
+                <div class="arch-box standalone">
+                    <h4>generate_data_standalone.py</h4>
+                    <p>Data Generation</p>
+                </div>
+                <div class="arch-box standalone">
+                    <h4>encode_video_standalone.py</h4>
+                    <p>Video Encoding</p>
+                </div>
+            </div>
+
+            <div class="arch-arrow">REST API</div>
+
+            <div class="arch-layer">
+                <div class="arch-box cosmos">
+                    <h4>Cosmos Server (H100)</h4>
+                    <p>Visual Transformation</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sessions Section -->
+    <section class="sessions">
+        <h2 class="section-title fade-in">22 Development Sessions</h2>
+        <p class="section-subtitle fade-in">February 3-11, 2026</p>
+
+        <div class="session-grid">
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">1</div>
+                    <div>
+                        <div class="session-title">AsyncIO Problem Solved</div>
+                        <div class="session-date">2026-02-03</div>
+                    </div>
+                </div>
+                <p class="session-desc">Root cause analysis and v5 solution with nest_asyncio + official API</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">2</div>
+                    <div>
+                        <div class="session-title">Git Repository Setup</div>
+                        <div class="session-date">2026-02-03</div>
+                    </div>
+                </div>
+                <p class="session-desc">Personal fork configuration with upstream tracking</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">3</div>
+                    <div>
+                        <div class="session-title">Documentation v1</div>
+                        <div class="session-date">2026-02-03</div>
+                    </div>
+                </div>
+                <p class="session-desc">First 3D visualization and technical report</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">4</div>
+                    <div>
+                        <div class="session-title">Standalone Mode</div>
+                        <div class="session-date">2026-02-03</div>
+                    </div>
+                </div>
+                <p class="session-desc">NUM_TRIALS env var, volume mounts for data persistence</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">5</div>
+                    <div>
+                        <div class="session-title">Documentation v2</div>
+                        <div class="session-date">2026-02-03</div>
+                    </div>
+                </div>
+                <p class="session-desc">Enhanced visualization with session details</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">6-10</div>
+                    <div>
+                        <div class="session-title">Jupyter Integration</div>
+                        <div class="session-date">2026-02-04</div>
+                    </div>
+                </div>
+                <p class="session-desc">v9-v12: subprocess/IPython attempts for Jupyter cells</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">11-15</div>
+                    <div>
+                        <div class="session-title">SKIP_SIMULATION Pattern</div>
+                        <div class="session-date">2026-02-04</div>
+                    </div>
+                </div>
+                <p class="session-desc">v13-v17: Standalone-only mode, pip_overrides solution</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">16-18</div>
+                    <div>
+                        <div class="session-title">File Structure & Video</div>
+                        <div class="session-date">2026-02-04</div>
+                    </div>
+                </div>
+                <p class="session-desc">v18-v20: Hierarchical output, video encoding standalone</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">19</div>
+                    <div>
+                        <div class="session-title">Documentation v3</div>
+                        <div class="session-date">2026-02-04</div>
+                    </div>
+                </div>
+                <p class="session-desc">Comprehensive visualization and technical report</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">20</div>
+                    <div>
+                        <div class="session-title">Multi-Camera UI</div>
+                        <div class="session-date">2026-02-11</div>
+                    </div>
+                </div>
+                <p class="session-desc">v21: SelectMultiple for video encoding cameras</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">21</div>
+                    <div>
+                        <div class="session-title">Multi-Video Cosmos</div>
+                        <div class="session-date">2026-02-11</div>
+                    </div>
+                </div>
+                <p class="session-desc">v22: Batch Cosmos processing with SelectMultiple</p>
+            </div>
+
+            <div class="session-card fade-in">
+                <div class="session-header">
+                    <div class="session-num">22</div>
+                    <div>
+                        <div class="session-title">Execution Timing</div>
+                        <div class="session-date">2026-02-11</div>
+                    </div>
+                </div>
+                <p class="session-desc">v23: Notebook timing with per-stage breakdown</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section class="results">
+        <h2 class="section-title fade-in">Project Results</h2>
+        <p class="section-subtitle fade-in">Metrics and achievements</p>
+
+        <div class="results-grid">
+            <div class="result-card fade-in">
+                <div class="result-value">22</div>
+                <div class="result-label">Development Sessions</div>
+            </div>
+
+            <div class="result-card fade-in">
+                <div class="result-value">23</div>
+                <div class="result-label">Code Versions (v1-v23)</div>
+            </div>
+
+            <div class="result-card fade-in">
+                <div class="result-value">2</div>
+                <div class="result-label">Standalone Scripts</div>
+            </div>
+
+            <div class="result-card fade-in">
+                <div class="result-value">4</div>
+                <div class="result-label">Camera Views</div>
+            </div>
+
+            <div class="result-card fade-in">
+                <div class="result-value">10K+</div>
+                <div class="result-label">Generated Images</div>
+            </div>
+
+            <div class="result-card fade-in">
+                <div class="result-value">100%</div>
+                <div class="result-label">Pipeline Success Rate</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Output Structure Section -->
+    <section class="output-structure">
+        <h2 class="section-title fade-in">Output Structure</h2>
+        <p class="section-subtitle fade-in">Organized hierarchical file system</p>
+
+        <div class="folder-tree fade-in">
+            <span class="folder">output/</span><br>
+            <span class="folder">  table_cam_normals/</span><br>
+            <span class="folder">    demo_0/</span><br>
+            <span class="file png">      step_0000.png ... step_0225.png</span><br>
+            <span class="folder">    demo_1/</span><br>
+            <span class="folder">    demo_2/</span><br>
+            <span class="folder">  table_cam_segmentation/</span><br>
+            <span class="folder">  table_high_cam_normals/</span><br>
+            <span class="folder">  table_high_cam_segmentation/</span><br>
+            <span class="folder">  videos/</span><br>
+            <span class="file mp4">    table_cam_demo_0.mp4</span><br>
+            <span class="file mp4">    table_high_cam_demo_0.mp4</span><br>
+            <span class="folder">  cosmos/</span><br>
+            <span class="file mp4">    cosmos_table_cam_demo_0_42.mp4</span><br>
+            <br>
+            <span class="folder">datasets/</span><br>
+            <span class="file hdf5">  generated_dataset.hdf5</span>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>Isaac Lab MimicGen Blueprint - NVIDIA Omniverse</p>
+        <p style="margin-top: 1rem;">
+            <a href="https://github.com/NVIDIA-Omniverse-blueprints/synthetic-manipulation-motion-generation" target="_blank">
+                Original Repository
+            </a>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://github.com/scholarchoi-yjchoi/mimicgen" target="_blank">
+                Development Fork
+            </a>
+        </p>
+        <p style="margin-top: 2rem; font-size: 0.9rem;">
+            Visualization v4 - Generated by Claude Code
+        </p>
+    </footer>
+
+    <script>
+        // Three.js Hero Animation
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('hero-canvas'),
+            alpha: true,
+            antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        // Robot Arm Base
+        const baseGeometry = new THREE.CylinderGeometry(1, 1.2, 0.5, 32);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = -2;
+        scene.add(base);
+
+        // Robot Arm Segments
+        const armMaterial = new THREE.MeshPhongMaterial({ color: 0x76b900 });
+
+        const segment1Geo = new THREE.BoxGeometry(0.4, 2, 0.4);
+        const segment1 = new THREE.Mesh(segment1Geo, armMaterial);
+        segment1.position.y = -0.8;
+        scene.add(segment1);
+
+        const segment2Geo = new THREE.BoxGeometry(0.3, 1.8, 0.3);
+        const segment2 = new THREE.Mesh(segment2Geo, armMaterial);
+        segment2.position.y = 0.9;
+        scene.add(segment2);
+
+        const segment3Geo = new THREE.BoxGeometry(0.25, 1.2, 0.25);
+        const segment3 = new THREE.Mesh(segment3Geo, armMaterial);
+        segment3.position.y = 2.2;
+        scene.add(segment3);
+
+        // Gripper
+        const gripperMaterial = new THREE.MeshPhongMaterial({ color: 0x888888 });
+        const gripper1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.1), gripperMaterial);
+        gripper1.position.set(-0.15, 3, 0);
+        scene.add(gripper1);
+
+        const gripper2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.1), gripperMaterial);
+        gripper2.position.set(0.15, 3, 0);
+        scene.add(gripper2);
+
+        // Cubes
+        const cubeColors = [0x00d4ff, 0xa855f7, 0xf97316];
+        const cubes = [];
+
+        for (let i = 0; i < 3; i++) {
+            const cubeGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const cubeMat = new THREE.MeshPhongMaterial({
+                color: cubeColors[i],
+                transparent: true,
+                opacity: 0.8
+            });
+            const cube = new THREE.Mesh(cubeGeo, cubeMat);
+            cube.position.set(2.5, -1.5 + i * 0.7, 0);
+            scene.add(cube);
+            cubes.push(cube);
+        }
+
+        // Particles
+        const particleGeometry = new THREE.BufferGeometry();
+        const particleCount = 200;
+        const positions = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 20;
+            positions[i + 1] = (Math.random() - 0.5) * 20;
+            positions[i + 2] = (Math.random() - 0.5) * 20;
+        }
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0x76b900,
+            size: 0.05,
+            transparent: true,
+            opacity: 0.6
+        });
+        const particles = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particles);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 10, 7);
+        scene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(0x76b900, 1, 10);
+        pointLight.position.set(0, 3, 2);
+        scene.add(pointLight);
+
+        camera.position.set(0, 1, 7);
+
+        // Animation
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+
+            // Robot arm movement
+            segment2.rotation.z = Math.sin(time) * 0.2;
+            segment3.rotation.z = Math.sin(time * 1.5) * 0.3;
+
+            // Gripper movement
+            gripper1.position.x = -0.15 - Math.abs(Math.sin(time * 2)) * 0.05;
+            gripper2.position.x = 0.15 + Math.abs(Math.sin(time * 2)) * 0.05;
+
+            // Cube floating
+            cubes.forEach((cube, i) => {
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.015;
+                cube.position.y = -1.5 + i * 0.7 + Math.sin(time + i) * 0.1;
+            });
+
+            // Particle rotation
+            particles.rotation.y += 0.001;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Scroll animations
+        const fadeElements = document.querySelectorAll('.fade-in');
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        fadeElements.forEach(el => observer.observe(el));
+    </script>
+</body>
+</html>
