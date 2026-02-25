@@ -1,0 +1,17 @@
+# G1 Humanoid Dual-Arm Manipulation - Custom Docker Image
+# Based on Isaac Lab 2.3.2 (headless) + Jupyter + Cosmos support
+FROM nvcr.io/nvidia/isaac-lab:2.3.2
+
+# Install Jupyter and required packages using Isaac Lab's bundled Python
+RUN /workspace/isaaclab/_isaac_sim/python.sh -m pip install --no-cache-dir \
+    jupyterlab \
+    nest_asyncio \
+    toml \
+    flask \
+    requests
+
+# Expose Jupyter port
+EXPOSE 8888
+
+# Working directory
+WORKDIR /workspace/isaaclab

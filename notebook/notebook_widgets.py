@@ -251,6 +251,10 @@ def create_task_input() -> widgets.Dropdown:
     """Create a dropdown for task selection."""
     available_tasks = [
         "Isaac-Stack-Cube-Franka-IK-Rel-Blueprint-Mimic-v0",
+        # G1 Humanoid Dual-Arm Tasks
+        "Isaac-Locomanipulation-G1-Abs-Mimic-v0",
+        "Isaac-PickPlace-Locomanipulation-G1-Abs-v0",
+        "Isaac-PickPlace-FixedBaseUpperBodyIK-G1-Abs-v0",
     ]
 
     task_widget = widgets.Dropdown(

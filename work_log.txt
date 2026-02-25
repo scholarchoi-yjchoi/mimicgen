@@ -2174,4 +2174,96 @@ libreoffice Isaac_Lab_MimicGen_Technical_Report_v4.docx
 ```
 
 ---
+
+## Session 24: G1 Humanoid Dual-Arm Migration — Phase 4 Infrastructure + Container Testing
+### 작업 일시: 2026-02-23
+
+### 목표
+Franka ↔ G1 switching 인프라 구축 (Phase 4) 및 G1 컨테이너 실행 테스트
+
+### 작업 내용
+
+#### 1. Isaac Lab 2.3.2 Docker 이미지 검증 완료
+
+- **GPU 호환성**: Blackwell RTX PRO 6000 + PyTorch 2.7.0+cu128, CUDA 12.8 ✅
+- **패키지 버전**: isaaclab 0.54.2, isaaclab_mimic 1.0.16
+- **Multi-EEF MimicGen**: 기존 single EEF assertion 완전 제거 확인 ✅
+- **G1 MimicGen 환경 파일** 발견 및 분석:
+  - `locomanipulation_g1_mimic_env_cfg.py`
+  - `locomanipulation_g1_mimic_env.py`
+- **SubTaskConstraintConfig**: COORDINATION (양팔 동기화), SEQUENTIAL (팔 순서) 지원
+
+#### 2. Phase 4: Franka↔G1 Switching 인프라 구축
+
+**새로 생성한 파일 (7개):**
+
+| 파일 | 용도 |
+|------|------|
+| `Dockerfile.g1` | isaac-lab:2.3.2 기반 G1 커스텀 이미지 (+ Jupyter, nest_asyncio, toml, flask) |
+| `docker-compose.g1.yml` | G1 전용 Docker Compose (동일 컨테이너 경로에 G1 파일 마운트) |
+| `launch_g1.sh` | G1 실행 스크립트 (jupyter/standalone 모드) |
+| `notebook/g1_generate_data_standalone.py` | G1 독립 데이터 생성 스크립트 |
+| `notebook/g1_generate_dataset.ipynb` | G1 Jupyter 노트북 (3-stage pipeline) |
+| `notebook/g1_kitchen_prompt.toml` | G1 주방 작업용 Cosmos 프롬프트 템플릿 |
+| `datasets/g1/`, `output_g1/` | G1 데이터/출력 디렉토리 |
+
+**수정한 파일 (1개):**
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `notebook/notebook_widgets.py` | G1 task 4개를 task 드롭다운에 추가 |
+
+**Docker 이미지 빌드:** `docker build -f Dockerfile.g1 -t isaac-lab-g1:2.3.2 .`
+
+#### 3. G1 컨테이너 테스트 — 핵심 발견 사항
+
+**발견 1: G1 환경 자동 등록 안 됨**
+- `locomanipulation/__init__.py`가 `tracking`만 import하고 `pick_place`는 안 함
+- `isaaclab_mimic.envs.__init__.py`가 `pinocchio_envs`를 import하지 않음
+- **해결**: 명시적 import 추가
+  ```python
+  import isaaclab_mimic.envs.pinocchio_envs
+  import isaaclab_tasks.manager_based.locomanipulation.pick_place
+  ```
+
+**발견 2: pinocchio C++ 바인딩 순서**
+- Pink IK controller가 pinocchio C++ 바인딩에 의존
+- AppLauncher 이후 import하면 `std::vector<std::string>` 바인딩 오류
+- **해결**: `import pinocchio`를 **AppLauncher 이전**에 실행 (가장 먼저!)
+
+**발견 3: URDF 사전 다운로드 필요**
+- G1 URDF가 Omniverse Nucleus에서 다운로드 필요
+- **해결**: `retrieve_file_path()` 호출로 사전 캐시
+
+**최종 테스트 결과 (PASS):**
+- 환경 생성, reset, step, 양팔 EEF pose 검색 모두 성공
+- 등록된 환경: `Isaac-Locomanipulation-G1-Abs-Mimic-v0`
+- obs[policy]: actions(32), robot_joint_pos(43), left/right eef pos/quat, hand_joint_state(14)
+- action_dim: 32, subtasks: right=2, left=1
+
+#### 4. G1 Task 매핑 (확인된 환경 이름)
+
+| 단축 키 | Gymnasium 환경 이름 |
+|---------|---------------------|
+| `locomanipulation` | `Isaac-Locomanipulation-G1-Abs-Mimic-v0` |
+| `pick_place` | `Isaac-PickPlace-Locomanipulation-G1-Abs-v0` |
+| `fixed_base` | `Isaac-PickPlace-FixedBaseUpperBodyIK-G1-Abs-v0` |
+| `inspire_hand` | `Isaac-PickPlace-G1-InspireFTP-Abs-v0` |
+
+### Franka↔G1 전환 방법
+
+```bash
+# Franka (기존과 동일)
+docker compose -f docker-compose.yml up -d
+
+# G1
+docker compose -f docker-compose.g1.yml up -d
+```
+
+### 다음 작업 (향후 세션)
+- Phase 0-2: 실제 G1 데이터 분석 (데이터 형식 TBD, subtask annotation 없음)
+- Phase 1-5: 전체 마이그레이션 단계별 진행
+- Task 3 (냄비 옮기기)부터 가장 단순한 것부터 순차 진행 예정
+
+---
 작성: Claude Code

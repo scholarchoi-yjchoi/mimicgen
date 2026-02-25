@@ -1,0 +1,52 @@
+# G1 Humanoid Dual-Arm Manipulation - Docker Compose
+# Usage:
+#   docker compose -f docker-compose.g1.yml up -d         # Jupyter mode
+#   MODE=standalone docker compose -f docker-compose.g1.yml up  # Standalone mode
+#
+# NOTE: Franka pipeline uses docker-compose.yml (unchanged)
+#       G1 pipeline uses this file (docker-compose.g1.yml)
+services:
+  isaac-lab-g1:
+    build:
+      context: .
+      dockerfile: Dockerfile.g1
+    image: isaac-lab-g1:2.3.2
+    privileged: true
+    network_mode: host
+    environment:
+      ACCEPT_EULA: Y
+      PRIVACY_CONSENT: Y
+      MODE: ${MODE:-jupyter}
+      NUM_TRIALS: ${NUM_TRIALS:-1}
+      TASK: ${TASK:-}
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      # G1 launch script
+      - ./launch_g1.sh:/workspace/isaaclab/launch.sh
+      # Shared utilities (same as Franka)
+      - ./notebook/app.py:/workspace/isaaclab/app.py
+      - ./notebook/cosmos_request.py:/workspace/isaaclab/cosmos_request.py
+      - ./notebook/notebook_utils.py:/workspace/isaaclab/notebook_utils.py
+      - ./notebook/notebook_widgets.py:/workspace/isaaclab/notebook_widgets.py
+      - ./notebook/encode_video_standalone.py:/workspace/isaaclab/encode_video_standalone.py
+      # G1-specific files (mounted to same container paths as Franka equivalents)
+      - ./notebook/g1_generate_data_standalone.py:/workspace/isaaclab/generate_data_standalone.py
+      - ./notebook/g1_generate_dataset.ipynb:/workspace/isaaclab/generate_dataset.ipynb
+      - ./notebook/g1_kitchen_prompt.toml:/workspace/isaaclab/stacking_prompt.toml
+      # G1 data and output directories
+      - ./datasets/g1:/workspace/isaaclab/datasets
+      - ./output_g1:/workspace/isaaclab/output
+    user: root
+    working_dir: /workspace/isaaclab
+    entrypoint: ["/workspace/isaaclab/launch.sh"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

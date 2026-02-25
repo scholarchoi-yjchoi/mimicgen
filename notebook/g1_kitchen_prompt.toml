@@ -1,0 +1,36 @@
+[prompt]
+description = """
+The scene depicts a humanoid robot with a dark grey torso and two articulated arms
+performing a {task_description} in a {location}. The workspace is centered on a
+{table_material} table. {scene_objects}. The robot stands upright, using both hands
+to manipulate objects with precision. The entire scene is illuminated by professional
+studio lighting, creating soft shadows. The camera is fixed in place.
+"""
+
+[variables]
+task_description = [
+    "fruit sorting task, picking up fruits and placing them into baskets",
+    "surface wiping task, using a rag to clean an induction cooktop",
+    "pot moving task, lifting and repositioning a pot on a cooktop",
+    "cooking preparation task, placing vegetables into a pot"
+]
+scene_objects = [
+    "On the table are colorful model fruits (apples, peaches, tomatoes) and two baskets (red and blue)",
+    "On the table is a rag and an induction cooktop with a smooth glass surface",
+    "On the table is a stainless steel pot on an induction cooktop, surrounded by scattered fruits",
+    "On the table are fresh vegetables (potatoes, sweet potatoes, bell peppers) and a pot on an induction cooktop"
+]
+table_material = [
+    "wood", "marble", "metal", "glass", "stone",
+    "polished stainless steel", "concrete", "granite"
+]
+location = [
+    "modern kitchen", "restaurant kitchen", "cooking school",
+    "home kitchen", "food preparation area", "culinary lab",
+    "test kitchen", "industrial kitchen"
+]
+
+[negative_prompt]
+description = """
+    The scene shows human workers or human arms.
+"""
