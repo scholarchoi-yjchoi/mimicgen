@@ -37,6 +37,8 @@ services:
       - ./notebook/notebook_utils.py:/workspace/isaaclab/notebook_utils.py
       - ./notebook/notebook_widgets.py:/workspace/isaaclab/notebook_widgets.py
       - ./notebook/encode_video_standalone.py:/workspace/isaaclab/encode_video_standalone.py
+      # G1 motion test script
+      - ./notebook/test_g1_motion.py:/workspace/isaaclab/test_g1_motion.py
       # G1-specific files (mounted to same container paths as Franka equivalents)
       - ./notebook/g1_generate_data_standalone.py:/workspace/isaaclab/generate_data_standalone.py
       - ./notebook/g1_generate_dataset.ipynb:/workspace/isaaclab/generate_dataset.ipynb

@@ -2266,4 +2266,72 @@ docker compose -f docker-compose.g1.yml up -d
 - Task 3 (냄비 옮기기)부터 가장 단순한 것부터 순차 진행 예정
 
 ---
+
+## 세션 25: G1 로봇 팔 렌더링 문제 디버깅 및 수정
+
+### 작업 일시
+2026-03-06
+
+### 문제 상황
+- G1 로봇이 headless 렌더링에서 보이지만, **팔이 64프레임 동안 전혀 움직이지 않음**
+- 이전 시도: `write_joint_state_to_sim()`, `root_physx_view` 직접 조작 → 모두 실패
+- PhysX observation 값(EEF 좌표)은 정상 변경되지만, 렌더링된 이미지에서 로봇 포즈가 동일
+
+### 1차 수정: env.step() + EEF 타겟 액션 (이전 계획 구현)
+
+직접 PhysX 관절 조작 대신 `env.step(action)`으로 전환:
+- 32D 액션 포맷: [left_pos(3), left_quat(4), right_pos(3), right_quat(4), left_hand(7), right_hand(7), lower_body(4)]
+- Pink IK solver → actuator model → scene.write_data_to_sim() → sim.step() → scene.update()
+- EEF 타겟 포즈 기반 8개 모션 페이즈 (T-pose, 팔 앞으로, 위로, 비대칭 등)
+- 프레임당 5 substep, 페이즈당 8프레임 = 총 64프레임
+
+**결과**: 여전히 팔이 움직이지 않음 (이미지 확인 완료)
+
+### 2차 수정: Fabric 아키텍처 문제 발견 및 수정
+
+#### 근본 원인 분석
+3개 병렬 탐색 에이전트로 Isaac Lab 렌더링 파이프라인 심층 조사:
+
+1. **Franka 파이프라인 분석**: Franka는 `CameraCfg` 센서 사용 (replicator 카메라 아님)
+2. **Auto-reset 분석**: `setup_env_config()`이 이미 termination 비활성화 (generation.py:146)
+3. **USD writeback 분석**: **핵심 발견** — `use_fabric=False`가 렌더링 파이프라인을 차단
+
+#### 핵심 발견: Isaac Lab Fabric 아키텍처
+- `fabric=True` (기본값): PhysX → Fabric 버퍼 → Renderer가 업데이트 확인 ✓
+- `fabric=False` (현재 설정): PhysX 실행되지만 **Renderer가 업데이트를 전혀 받지 못함** ✗
+
+> "When using GPU simulation, Fabric is required to visualize updates in the renderer.
+> If Fabric is disabled, the renderer will not be able to render any updates."
+
+- Observation은 PhysX 버퍼에서 직접 읽으므로 정상 (EEF 좌표 변경됨)
+- 하지만 Replicator 카메라는 Render Graph에서 읽으므로 Fabric 없이는 초기 상태만 봄
+
+#### 이전 `use_fabric=False` 설정 이유와 오해
+- "Fabric 모드에서 articulation이 USD에 안 보임" → 이는 **정상 동작** (Fabric이 USD를 우회)
+- Renderer는 USD가 아닌 **Fabric 버퍼**에서 읽으므로, articulation은 렌더링에서 보여야 함
+
+#### 적용한 수정사항 (`test_g1_motion.py`)
+1. `env_cfg.sim.use_fabric = False` 라인 **제거** (Fabric 기본 활성화)
+2. Fabric 상태 런타임 확인 로그 추가
+3. `env.step()` 반환값에서 terminated/truncated 감지 로그 추가
+4. 워밍업 후 렌더 검증 (평균 픽셀값 > 0 확인)
+5. 독스트링 업데이트
+
+#### Fallback 계획 (Approach B)
+Fabric=True에서도 로봇이 안 보일 경우:
+- Replicator 카메라 → Isaac Lab `CameraCfg` 센서로 교체
+- Franka 파이프라인과 동일한 검증된 방식
+
+### 수정된 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `notebook/test_g1_motion.py` | env.step() EEF 액션 + Fabric 활성화 |
+| `docker-compose.g1.yml` | test_g1_motion.py 볼륨 마운트 추가 |
+
+### 다음 작업
+- 수정된 스크립트 실행 후 결과 확인
+- Approach A 실패 시 Approach B (CameraCfg 센서) 적용
+- 성공 시 전체 G1 데이터 생성 파이프라인에 반영
+
+---
 작성: Claude Code
